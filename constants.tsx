@@ -6,6 +6,19 @@ export const APP_NAME = "Kitchen Pal"; // Updated App Name
 export const LOCAL_STORAGE_USERS_KEY = 'kitchenPalUsers';
 export const ACTIVE_USER_ID_KEY = 'kitchenPalActiveUserId';
 
+// --- DISCRETE UNIT CLASSIFICATION ---
+export const DISCRETE_UNITS = [Unit.PIECE, Unit.NONE];
+
+export const isDiscreteUnit = (unit: Unit): boolean => DISCRETE_UNITS.includes(unit);
+
+export const formatQuantityForUnit = (quantity: number, unit: Unit): number => {
+  if (isDiscreteUnit(unit)) {
+    // For discrete units, always use integer values
+    return Math.max(0, Math.round(quantity));
+  }
+  // For continuous units, use decimal precision
+  return quantity < 0.001 ? 0 : Math.round(quantity * 1000) / 1000;
+};
 
 export const generateId = (): string => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -116,6 +129,12 @@ export const PencilIcon = ({ className = "w-5 h-5" }: { className?: string }): R
 export const ChevronDownIcon = ({ className = "w-5 h-5" }: { className?: string }): React.ReactElement => (
  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
     <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+  </svg>
+);
+
+export const ChevronUpIcon = ({ className = "w-5 h-5" }: { className?: string }): React.ReactElement => (
+ <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className}>
+    <path fillRule="evenodd" d="M14.78 15.78a.75.75 0 0 1-1.06 0L10 12.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
   </svg>
 );
 

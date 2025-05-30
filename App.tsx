@@ -1,20 +1,161 @@
-import React, { useState, useEffect, createContext, useContext, useCallback, ReactNode, FormEvent, ReactElement, ChangeEvent } from 'react';
-import { HashRouter, Routes, Route, Link, useNavigate, useParams, useLocation, Navigate } from 'react-router-dom';
+import React, { useState, useEffect, createContext, useContext, useCallback, ReactNode, FormEvent, ReactElement, ChangeEvent, FocusEvent } from 'react';
+import { HashRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { 
   Recipe, RecipeIngredient, InventoryItem, Store, ShoppingList, ShoppingListItem, Unit, FrequencyOfUse, MeasurementSystem, User, UserPreferences,
-  RecipesContextType, InventoryContextType, StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView, ScrapedRecipeData
+  RecipesContextType, InventoryContextType, StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView, ScrapedRecipeData, RecipeInventoryAnalysis
 } from './types';
+import { saveState, loadState } from './localStorageService';
 import { 
   generateId, UNITS_ARRAY, FREQUENCY_OF_USE_OPTIONS, MEASUREMENT_SYSTEM_OPTIONS, normalizeIngredientName, convertUnit, isItemExpiringSoon, isItemExpired, APP_NAME,
-  BookOpenIcon, ArchiveBoxIcon, ShoppingCartIcon, BuildingStorefrontIcon, PlusIcon, TrashIcon, PencilIcon, ArrowLeftIcon, MagnifyingGlassIcon, DEFAULT_RECIPE_IMAGE, DEFAULT_AVATAR_IMAGE, CalendarIcon, SparklesIcon, CubeTransparentIcon, UserCircleIcon, ArrowRightOnRectangleIcon, UserPlusIcon, ArrowLeftOnRectangleIcon, WrenchScrewdriverIcon,
-  LOCAL_STORAGE_USERS_KEY, ACTIVE_USER_ID_KEY
+  LOCAL_STORAGE_USERS_KEY, ACTIVE_USER_ID_KEY, ChevronUpIcon, ChevronDownIcon, isDiscreteUnit, formatQuantityForUnit
 } from './constants';
-import { loadState, saveState } from './localStorageService';
+import { 
+  BookOpenIcon, ArchiveBoxIcon, ShoppingCartIcon, BuildingStorefrontIcon, PlusIcon, TrashIcon, PencilIcon,
+  ArrowLeftIcon, MagnifyingGlassIcon, DEFAULT_RECIPE_IMAGE, DEFAULT_AVATAR_IMAGE,
+  CalendarIcon, SparklesIcon, CubeTransparentIcon, UserCircleIcon, ArrowRightOnRectangleIcon, UserPlusIcon, ArrowLeftOnRectangleIcon,
+} from './constants';
 import { Modal, Button, InputField, TextAreaField, SelectField, Card, SearchInput, EmptyState, AddItemButton, CheckboxField, Alert } from './components';
 import { IngredientCorrectionButton, FixAllIngredientsButton } from './components/IngredientCorrectionButton';
 import { scrapeRecipeFromUrl, validateRecipeUrl } from './services/recipeScrapingService';
 import { normalizeScrapedRecipe, validateNormalizedRecipe } from './utils/recipeNormalizer';
-import { detectIngredientIssues, autoFixIngredient, hasIngredientIssues, type IngredientIssue } from './utils/ingredientParser';
+import { useRecipeCollectionAnalysis } from './utils/hooks';
+import { getRecipeReadinessStatus, getStatusColorClasses } from './utils/recipeAnalyzer';
+import { ServingSizeSelector } from './components/ServingSizeSelector';
+import { ScaledIngredientsList } from './components/ScaledIngredientsList';
+import { scaleIngredients, type ScaledIngredient } from './utils/recipeScaling';
+import { InteractiveInstructions } from './components/InteractiveInstructions';
+
+
+// --- INVENTORY ANALYSIS COMPONENTS ---
+interface InventoryStatusBadgeProps {
+  analysis: RecipeInventoryAnalysis;
+}
+
+const InventoryStatusBadge: React.FC<InventoryStatusBadgeProps> = ({ analysis }) => {
+  const status = getRecipeReadinessStatus(analysis);
+  const colors = getStatusColorClasses(status);
+  
+  return (
+    <div 
+      className={`px-2 py-1 rounded-full text-xs font-semibold ${colors.bg} ${colors.text} ${colors.border} border shadow-sm`}
+    >
+      {analysis.completionPercentage}%
+    </div>
+  );
+};
+
+interface InventoryAnalysisCardProps {
+  analysis: RecipeInventoryAnalysis;
+}
+
+const InventoryAnalysisCard: React.FC<InventoryAnalysisCardProps> = ({ analysis }) => {
+  const [showDetails, setShowDetails] = useState(false);
+  const status = getRecipeReadinessStatus(analysis);
+  const colors = getStatusColorClasses(status);
+
+  const getStatusText = (status: string): string => {
+    switch (status) {
+      case 'ready':
+        return 'Ready to cook!';
+      case 'mostly-ready':
+        return 'Almost ready';
+      case 'partially-ready':
+        return 'Missing some items';
+      case 'not-ready':
+        return 'Many items needed';
+      default:
+        return 'Unknown status';
+    }
+  };
+
+  const getServingsText = (): string => {
+    if (analysis.maxPossibleServings === 0) {
+      return 'Cannot make any servings';
+    } else if (analysis.maxPossibleServings === Infinity) {
+      return 'Can make unlimited servings';
+    } else {
+      return `Can make ${analysis.maxPossibleServings} serving${analysis.maxPossibleServings !== 1 ? 's' : ''}`;
+    }
+  };
+
+  return (
+    <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs">
+      {/* Status Summary */}
+      <div className="flex items-center justify-between mb-1">
+        <span className={`font-medium ${colors.text}`}>
+          {getStatusText(status)}
+        </span>
+        <span className="text-gray-600">
+          {analysis.availableIngredients}/{analysis.totalIngredients} ingredients
+        </span>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+        <div 
+          className={`h-1.5 rounded-full transition-all duration-300 ${
+            status === 'ready' ? 'bg-green-500' :
+            status === 'mostly-ready' ? 'bg-yellow-500' :
+            status === 'partially-ready' ? 'bg-orange-500' : 'bg-red-500'
+          }`}
+          style={{ width: `${analysis.completionPercentage}%` }}
+        />
+      </div>
+
+      {/* Servings Info */}
+      <div className="text-gray-600 mb-2">
+        {getServingsText()}
+      </div>
+
+      {/* Missing Ingredients Toggle */}
+      {analysis.missingIngredients.length > 0 && (
+        <div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDetails(!showDetails);
+            }}
+            className="flex items-center justify-between w-full text-left text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            <span>Missing {analysis.missingIngredients.length} item{analysis.missingIngredients.length !== 1 ? 's' : ''}</span>
+            {showDetails ? (
+              <ChevronUpIcon className="w-3 h-3" />
+            ) : (
+              <ChevronDownIcon className="w-3 h-3" />
+            )}
+          </button>
+
+          {/* Missing Ingredients Details */}
+          {showDetails && (
+            <div className="mt-2 pt-2 border-t border-gray-200">
+              <div className="space-y-1">
+                {analysis.missingIngredients.slice(0, 3).map((missing, index) => (
+                  <div key={index} className="text-gray-600">
+                    <span className="font-medium">{missing.ingredientName}</span>
+                    {missing.availableQuantity !== undefined ? (
+                      <span className="ml-1">
+                        (need {missing.neededQuantity.toFixed(1)} {missing.unit}, have {missing.availableQuantity.toFixed(1)})
+                      </span>
+                    ) : (
+                      <span className="ml-1">
+                        (need {missing.neededQuantity.toFixed(1)} {missing.unit})
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {analysis.missingIngredients.length > 3 && (
+                  <div className="text-gray-500 italic">
+                    +{analysis.missingIngredients.length - 3} more...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // --- CONTEXTS ---
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -310,22 +451,234 @@ const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     if (!currentUser) return false;
     const normalizedName = normalizeIngredientName(ingredientName);
     let deductionHappened = false;
+    
+    // Find the inventory item first to validate the deduction
+    const inventoryItem = inventory.find(item => 
+      normalizeIngredientName(item.ingredientName) === normalizedName
+    );
+    
+    if (!inventoryItem) {
+      console.log(`Deduction failed: Item "${ingredientName}" not found in inventory`);
+      return false;
+    }
+    
+    // Convert the quantity to the inventory item's unit
+    const convertedQuantityToDeduct = convertUnit(quantity, unit, inventoryItem.unit);
+    if (convertedQuantityToDeduct === null) {
+      console.log(`Deduction failed: Cannot convert ${quantity} ${unit} to ${inventoryItem.unit} for ${ingredientName}`);
+      return false;
+    }
+    
+    // Check if we have enough quantity
+    if (inventoryItem.quantity < convertedQuantityToDeduct) {
+      console.log(`Deduction failed: Insufficient ${ingredientName}. Have ${inventoryItem.quantity} ${inventoryItem.unit}, need ${convertedQuantityToDeduct} ${inventoryItem.unit}`);
+      return false;
+    }
+    
+    // Perform the deduction by creating NEW objects (no direct mutation)
     setInventory(prevInventory => 
       prevInventory.map(item => {
         if (normalizeIngredientName(item.ingredientName) === normalizedName) {
-          const convertedQuantityToDeduct = convertUnit(quantity, unit, item.unit);
-          if (convertedQuantityToDeduct !== null) {
-            item.quantity = Math.max(0, item.quantity - convertedQuantityToDeduct);
-            deductionHappened = true;
-          }
+          const newQuantity = Math.max(0, item.quantity - convertedQuantityToDeduct);
+          
+          // Apply proper rounding based on unit type
+          const formattedQuantity = formatQuantityForUnit(newQuantity, item.unit);
+          
+          deductionHappened = true;
+          
+          console.log(`Deducted ${convertedQuantityToDeduct} ${item.unit} of ${ingredientName}. Remaining: ${formattedQuantity} ${item.unit}`);
+          
+          // Return NEW object instead of mutating existing one
+          return {
+            ...item,
+            quantity: formattedQuantity
+          };
         }
         return item;
-      }).filter(item => item.quantity > 0.001 || (item.quantity === 0 && (item.unit === Unit.PIECE || item.unit === Unit.NONE)))
+      }).filter(item => {
+        // Remove items that reach exactly 0 quantity for continuous units
+        // Keep discrete units (pieces) even at 0 for easier re-adding
+        if (item.quantity === 0) {
+          return isDiscreteUnit(item.unit);
+        }
+        return item.quantity > 0;
+      })
     );
+    
     return deductionHappened;
   };
+
+  // Enhanced function for recipe preparation with validation
+  const validateRecipePreparation = (
+    recipe: Recipe, 
+    requestedServings: number
+  ): {
+    canPrepare: boolean;
+    missingIngredients: Array<{
+      name: string;
+      needed: number;
+      available: number;
+      unit: string;
+    }>;
+    warnings: string[];
+  } => {
+    const requiredIngredients = recipe.ingredients.filter(ing => !ing.isOptional);
+    const missingIngredients: Array<{name: string; needed: number; available: number; unit: string}> = [];
+    const warnings: string[] = [];
+    
+    console.log(`Validating recipe preparation for ${recipe.name} - ${requestedServings} servings`);
+    
+    for (const ingredient of requiredIngredients) {
+      const normalizedName = normalizeIngredientName(ingredient.ingredientName);
+      const inventoryItem = inventory.find(item => 
+        normalizeIngredientName(item.ingredientName) === normalizedName
+      );
+      
+      const neededQuantity = (ingredient.quantity / recipe.defaultServings) * requestedServings;
+      
+      console.log(`Checking ${ingredient.ingredientName}: need ${neededQuantity} ${ingredient.unit}`);
+      
+      if (!inventoryItem) {
+        console.log(`  - Item not found in inventory`);
+        missingIngredients.push({
+          name: ingredient.ingredientName,
+          needed: neededQuantity,
+          available: 0,
+          unit: ingredient.unit
+        });
+        continue;
+      }
+      
+      // Convert inventory quantity to recipe unit for comparison
+      const convertedAvailable = convertUnit(
+        inventoryItem.quantity,
+        inventoryItem.unit,
+        ingredient.unit
+      );
+      
+      if (convertedAvailable === null) {
+        console.log(`  - Cannot convert ${inventoryItem.unit} to ${ingredient.unit}`);
+        warnings.push(`Cannot convert ${inventoryItem.unit} to ${ingredient.unit} for ${ingredient.ingredientName}`);
+        missingIngredients.push({
+          name: ingredient.ingredientName,
+          needed: neededQuantity,
+          available: 0,
+          unit: ingredient.unit
+        });
+        continue;
+      }
+      
+      console.log(`  - Available: ${convertedAvailable} ${ingredient.unit} (${inventoryItem.quantity} ${inventoryItem.unit})`);
+      
+      if (convertedAvailable < neededQuantity) {
+        console.log(`  - Insufficient quantity`);
+        missingIngredients.push({
+          name: ingredient.ingredientName,
+          needed: neededQuantity,
+          available: convertedAvailable,
+          unit: ingredient.unit
+        });
+      } else {
+        console.log(`  - Sufficient quantity available`);
+      }
+    }
+    
+    const canPrepare = missingIngredients.length === 0;
+    console.log(`Validation result: ${canPrepare ? 'Can prepare' : 'Cannot prepare'} - ${missingIngredients.length} missing ingredients`);
+    
+    return {
+      canPrepare,
+      missingIngredients,
+      warnings
+    };
+  };
+
+  // Enhanced deduction function with detailed results and improved error handling
+  const deductIngredientsForPreparation = (
+    recipe: Recipe,
+    preparedServings: number
+  ): {
+    success: boolean;
+    deductedIngredients: Array<{
+      name: string;
+      amountDeducted: number;
+      unit: string;
+      remainingInInventory: number;
+    }>;
+    errors: string[];
+  } => {
+    console.log(`Starting ingredient deduction for ${recipe.name} - ${preparedServings} servings`);
+    
+    const deductedIngredients: Array<{
+      name: string;
+      amountDeducted: number;
+      unit: string;
+      remainingInInventory: number;
+    }> = [];
+    const errors: string[] = [];
+    
+    // Use the same validation logic as the validation function
+    const validation = validateRecipePreparation(recipe, preparedServings);
+    if (!validation.canPrepare) {
+      console.log(`Cannot proceed with deduction - validation failed`);
+      return {
+        success: false,
+        deductedIngredients: [],
+        errors: validation.missingIngredients.map(ing => {
+          if (ing.available === 0) {
+            return `${ing.name} not found in inventory`;
+          } else {
+            return `Insufficient ${ing.name}: need ${ing.needed.toFixed(2)} ${ing.unit}, have ${ing.available.toFixed(2)} ${ing.unit}`;
+          }
+        })
+      };
+    }
+    
+    // Perform the deductions using the same logic as validation
+    const requiredIngredients = recipe.ingredients.filter(ing => !ing.isOptional);
+    
+    for (const ingredient of requiredIngredients) {
+      const neededQuantity = (ingredient.quantity / recipe.defaultServings) * preparedServings;
+      
+      console.log(`Deducting ${neededQuantity} ${ingredient.unit} of ${ingredient.ingredientName}`);
+      
+      // Get the inventory item state before deduction
+      const inventoryItemBefore = getInventoryItemByName(ingredient.ingredientName);
+      
+      const success = deductFromInventory(ingredient.ingredientName, neededQuantity, ingredient.unit);
+      
+      if (success) {
+        // Get remaining quantity after deduction
+        const inventoryItemAfter = getInventoryItemByName(ingredient.ingredientName);
+        const convertedRemaining = inventoryItemAfter ? 
+          convertUnit(inventoryItemAfter.quantity, inventoryItemAfter.unit, ingredient.unit) || 0 : 0;
+        
+        deductedIngredients.push({
+          name: ingredient.ingredientName,
+          amountDeducted: neededQuantity,
+          unit: ingredient.unit,
+          remainingInInventory: convertedRemaining
+        });
+        
+        console.log(`  - Successfully deducted. Remaining: ${convertedRemaining} ${ingredient.unit}`);
+      } else {
+        const errorMsg = `Failed to deduct ${ingredient.ingredientName}`;
+        console.log(`  - ${errorMsg}`);
+        errors.push(errorMsg);
+      }
+    }
+    
+    const success = errors.length === 0;
+    console.log(`Deduction complete: ${success ? 'SUCCESS' : 'FAILED'} - ${deductedIngredients.length} ingredients deducted, ${errors.length} errors`);
+    
+    return {
+      success,
+      deductedIngredients,
+      errors
+    };
+  };
   
-  return <InventoryContext.Provider value={{ inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, getInventoryItemByName, deductFromInventory }}>{children}</InventoryContext.Provider>;
+  return <InventoryContext.Provider value={{ inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, getInventoryItemByName, deductFromInventory, validateRecipePreparation, deductIngredientsForPreparation }}>{children}</InventoryContext.Provider>;
 };
 
 const StoresProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -949,10 +1302,26 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
 };
 
 // Recipe Card
-const RecipeCard: React.FC<{ recipe: Recipe; onSelect: () => void; onDelete: () => void; onEdit: () => void; }> = ({ recipe, onSelect, onDelete, onEdit }) => {
+const RecipeCard: React.FC<{ 
+  recipe: Recipe; 
+  onSelect: () => void; 
+  onDelete: () => void; 
+  onEdit: () => void;
+  onAddToShoppingList: () => void;
+  showInventoryAnalysis?: boolean;
+  inventoryAnalysis?: RecipeInventoryAnalysis;
+}> = ({ recipe, onSelect, onDelete, onEdit, onAddToShoppingList, showInventoryAnalysis = false, inventoryAnalysis }) => {
   const hasOptional = recipe.ingredients.some(ing => ing.isOptional);
+  
   return (
-    <Card className="flex flex-col justify-between h-full">
+    <Card className="flex flex-col justify-between h-full relative">
+      {/* Inventory Status Badge */}
+      {showInventoryAnalysis && inventoryAnalysis && (
+        <div className="absolute top-2 right-2 z-10">
+          <InventoryStatusBadge analysis={inventoryAnalysis} />
+        </div>
+      )}
+      
       <div>
         <img 
           src={recipe.imageUrl || DEFAULT_RECIPE_IMAGE} 
@@ -961,11 +1330,22 @@ const RecipeCard: React.FC<{ recipe: Recipe; onSelect: () => void; onDelete: () 
           onClick={onSelect}
           onError={(e) => (e.currentTarget.src = DEFAULT_RECIPE_IMAGE)}
         />
-        <h3 className="text-xl font-semibold text-blue-600 hover:text-blue-800 mb-2 cursor-pointer" onClick={onSelect}>{recipe.name}</h3>
+        <h3 className="text-xl font-semibold text-blue-600 hover:text-blue-800 mb-2 cursor-pointer" onClick={onSelect}>
+          {recipe.name}
+        </h3>
+        
+        {/* Basic Recipe Info */}
         <p className="text-sm text-gray-500 mb-1">Servings: {recipe.defaultServings}</p>
         {recipe.prepTime && <p className="text-sm text-gray-500 mb-1">Prep: {recipe.prepTime}</p>}
         {recipe.cookTime && <p className="text-sm text-gray-500 mb-1">Cook: {recipe.cookTime}</p>}
         {hasOptional && <p className="text-xs text-purple-600 mb-1">Has optional ingredients</p>}
+        
+        {/* Inventory Analysis Info */}
+        {showInventoryAnalysis && inventoryAnalysis && (
+          <InventoryAnalysisCard analysis={inventoryAnalysis} />
+        )}
+        
+        {/* Tags */}
         {recipe.tags && recipe.tags.length > 0 && (
           <div className="mt-2">
             {recipe.tags.map(tag => (
@@ -976,9 +1356,26 @@ const RecipeCard: React.FC<{ recipe: Recipe; onSelect: () => void; onDelete: () 
           </div>
         )}
       </div>
+      
       <div className="mt-4 flex justify-end space-x-2 pt-2 border-t border-gray-200">
-        <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${recipe.name}`}><PencilIcon /></Button>
-        <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(); }} aria-label={`Delete ${recipe.name}`}><TrashIcon /></Button>
+        <Button 
+          variant="secondary" 
+          size="sm" 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            onAddToShoppingList(); 
+          }} 
+          aria-label={`Add ${recipe.name} to shopping list`}
+          title="Add to Shopping List"
+        >
+          <ShoppingCartIcon className="w-4 h-4" />
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${recipe.name}`}>
+          <PencilIcon />
+        </Button>
+        <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(); }} aria-label={`Delete ${recipe.name}`}>
+          <TrashIcon />
+        </Button>
       </div>
     </Card>
   );
@@ -987,9 +1384,21 @@ const RecipeCard: React.FC<{ recipe: Recipe; onSelect: () => void; onDelete: () 
 // Recipes Page
 const RecipesPage: React.FC = () => {
   const { recipes, addRecipe, updateRecipe, deleteRecipe } = useRecipes();
+  const { inventory, getInventoryItemByName } = useInventory();
+  const { addShoppingList } = useShoppingLists();
   const { setActiveView, searchTerm } = useAppState();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | undefined>(undefined);
+  const [showInventoryAnalysis, setShowInventoryAnalysis] = useState(true);
+  const [alertMessage, setAlertMessage] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  
+  // New state for servings prompt modal
+  const [showServingsModal, setShowServingsModal] = useState(false);
+  const [selectedRecipeForShoppingList, setSelectedRecipeForShoppingList] = useState<Recipe | null>(null);
+  const [selectedServings, setSelectedServings] = useState(1);
+
+  // Get inventory analysis for all recipes
+  const recipeAnalysisMap = useRecipeCollectionAnalysis(recipes, inventory);
 
   const handleSaveRecipe = (recipeData: Omit<Recipe, 'id' | 'imageUrl'> | Recipe) => {
     if ('id' in recipeData) { 
@@ -1006,14 +1415,153 @@ const RecipesPage: React.FC = () => {
     setShowAddModal(true);
   };
 
+  // Function to show servings prompt modal
+  const promptForServingsAndAddToShoppingList = (recipe: Recipe) => {
+    setSelectedRecipeForShoppingList(recipe);
+    setSelectedServings(recipe.defaultServings);
+    setShowServingsModal(true);
+  };
+
+  // Modified direct recipe to shopping list function that takes servings as parameter
+  const createShoppingListWithServings = (recipe: Recipe, servings: number) => {
+    const servingsMultiplier = servings / recipe.defaultServings;
+    const neededIngredients: Record<string, { totalQuantity: number; unit: Unit; defaultStoreId?: string }> = {};
+
+    recipe.ingredients.forEach(ing => {
+      // Skip optional ingredients by default
+      if (ing.isOptional) return;
+
+      const normalizedName = normalizeIngredientName(ing.ingredientName);
+      const scaledQuantity = ing.quantity * servingsMultiplier;
+      
+      const inventoryItemForDefaultStore = getInventoryItemByName(normalizedName);
+
+      if (!neededIngredients[normalizedName]) {
+        neededIngredients[normalizedName] = { 
+          totalQuantity: 0, 
+          unit: ing.unit, 
+          defaultStoreId: inventoryItemForDefaultStore?.defaultStoreId 
+        };
+      }
+      
+      const existingEntry = neededIngredients[normalizedName];
+      const convertedScaledQuantity = convertUnit(scaledQuantity, ing.unit, existingEntry.unit);
+
+      if (convertedScaledQuantity !== null) {
+        existingEntry.totalQuantity += convertedScaledQuantity;
+      } else { 
+        if (existingEntry.totalQuantity === 0) { 
+           existingEntry.unit = ing.unit;
+           existingEntry.totalQuantity = scaledQuantity;
+        }
+      }
+      
+      if (!existingEntry.defaultStoreId && inventoryItemForDefaultStore?.defaultStoreId) {
+        existingEntry.defaultStoreId = inventoryItemForDefaultStore.defaultStoreId;
+      }
+    });
+    
+    const shoppingListItems: ShoppingListItem[] = [];
+    Object.entries(neededIngredients).forEach(([name, data]) => {
+      const inventoryItem = getInventoryItemByName(name);
+      let quantityToBuy = data.totalQuantity;
+
+      if (inventoryItem) {
+        const inventoryQuantityInNeededUnit = convertUnit(inventoryItem.quantity, inventoryItem.unit, data.unit);
+        if (inventoryQuantityInNeededUnit !== null) {
+          quantityToBuy -= inventoryQuantityInNeededUnit;
+        }
+      }
+      
+      if (quantityToBuy > 0.01) { 
+        shoppingListItems.push({
+          id: generateId(),
+          ingredientName: name,
+          neededQuantity: parseFloat(quantityToBuy.toFixed(2)), 
+          unit: data.unit,
+          recipeSources: [{ recipeName: recipe.name, quantity: data.totalQuantity }],
+          purchased: false,
+          storeId: data.defaultStoreId,
+        });
+      }
+    });
+    
+    if (shoppingListItems.length === 0) {
+      setAlertMessage({
+        type: 'success', 
+        message: `You have all ingredients for "${recipe.name}" (${servings} serving${servings !== 1 ? 's' : ''})! No shopping needed.`
+      });
+      setTimeout(() => setAlertMessage(null), 5000);
+      return;
+    }
+    
+    // Create new shopping list
+    const listName = `Shopping List - ${recipe.name} (${servings} serving${servings !== 1 ? 's' : ''}) - ${new Date().toLocaleDateString()}`;
+    const newListId = addShoppingList({
+      name: listName,
+      items: shoppingListItems
+    });
+    
+    // Show success notification
+    setAlertMessage({
+      type: 'success', 
+      message: `Shopping list "${listName}" created with ${shoppingListItems.length} items! Click here to view it.`
+    });
+    setTimeout(() => setAlertMessage(null), 5000);
+    
+    // Close the modal
+    setShowServingsModal(false);
+    setSelectedRecipeForShoppingList(null);
+    
+    // Optional: Navigate to the new shopping list after a brief delay
+    setTimeout(() => {
+      setActiveView('shopping_list_detail', { id: newListId });
+    }, 1000);
+  };
+
+  const handleConfirmServings = () => {
+    if (selectedRecipeForShoppingList) {
+      createShoppingListWithServings(selectedRecipeForShoppingList, selectedServings);
+    }
+  };
+
   const filteredRecipes = recipes.filter(recipe => 
     recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     recipe.ingredients.some(ing => ing.ingredientName.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (recipe.tags && recipe.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())))
   ).sort((a,b) => a.name.localeCompare(b.name));
 
+  // Get summary statistics
+  const readyRecipes = Array.from(recipeAnalysisMap.values()).filter(analysis => analysis.hasAllIngredients).length;
+  const totalRecipes = recipes.length;
+
   return (
     <div className="container mx-auto p-4">
+      {alertMessage && <Alert type={alertMessage.type} message={alertMessage.message} onClose={() => setAlertMessage(null)} />}
+      {/* Header with summary and toggle */}
+      {totalRecipes > 0 && (
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between bg-gray-50 p-4 rounded-lg">
+          <div className="mb-4 sm:mb-0">
+            <h2 className="text-lg font-semibold text-gray-800">Your Recipes</h2>
+            <p className="text-sm text-gray-600">
+              {readyRecipes} of {totalRecipes} recipes ready to cook with current inventory
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <label htmlFor="inventoryToggle" className="text-sm text-gray-700">
+              Show inventory status
+            </label>
+            <input
+              id="inventoryToggle"
+              type="checkbox"
+              checked={showInventoryAnalysis}
+              onChange={(e) => setShowInventoryAnalysis(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+      )}
+
       {filteredRecipes.length === 0 && searchTerm === '' ? (
         <EmptyState 
           icon={<BookOpenIcon />}
@@ -1029,24 +1577,96 @@ const RecipesPage: React.FC = () => {
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredRecipes.map(recipe => (
-            <RecipeCard 
-              key={recipe.id} 
-              recipe={recipe} 
-              onSelect={() => setActiveView('recipe_detail', { id: recipe.id })}
-              onDelete={() => deleteRecipe(recipe.id)}
-              onEdit={() => openEditModal(recipe)}
-            />
-          ))}
+          {filteredRecipes.map(recipe => {
+            const analysis = recipeAnalysisMap.get(recipe.id);
+            return (
+              <RecipeCard 
+                key={recipe.id} 
+                recipe={recipe} 
+                onSelect={() => setActiveView('recipe_detail', { id: recipe.id })}
+                onDelete={() => deleteRecipe(recipe.id)}
+                onEdit={() => openEditModal(recipe)}
+                onAddToShoppingList={() => promptForServingsAndAddToShoppingList(recipe)}
+                showInventoryAnalysis={showInventoryAnalysis}
+                inventoryAnalysis={analysis}
+              />
+            );
+          })}
         </div>
       )}
       <AddItemButton onClick={() => { setEditingRecipe(undefined); setShowAddModal(true); }} text="Add Recipe" />
+      
+      {/* Recipe Form Modal */}
       <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setEditingRecipe(undefined); }} title={editingRecipe ? "Edit Recipe" : "Add New Recipe"} size="2xl">
         <RecipeForm 
           initialRecipe={editingRecipe}
           onSave={handleSaveRecipe} 
           onClose={() => { setShowAddModal(false); setEditingRecipe(undefined); }} 
         />
+      </Modal>
+
+      {/* Servings Selection Modal */}
+      <Modal 
+        isOpen={showServingsModal} 
+        onClose={() => { setShowServingsModal(false); setSelectedRecipeForShoppingList(null); }} 
+        title="Add to Shopping List"
+      >
+        {selectedRecipeForShoppingList && (
+          <div className="space-y-4">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                {selectedRecipeForShoppingList.name}
+              </h3>
+              <p className="text-sm text-gray-600">
+                How many servings would you like to add to your shopping list?
+              </p>
+            </div>
+            
+            <div className="flex items-center justify-center space-x-4">
+              <label htmlFor="servingsInput" className="text-sm font-medium text-gray-700">
+                Servings:
+              </label>
+              <InputField
+                id="servingsInput"
+                type="number"
+                value={selectedServings}
+                onChange={(e) => setSelectedServings(Math.max(1, parseInt(e.target.value) || 1))}
+                onFocus={(e) => e.target.select()}
+                min="1"
+                max="50"
+                step="1"
+                className="w-20 text-center"
+                aria-label="Number of servings"
+              />
+              <span className="text-sm text-gray-500">
+                (default: {selectedRecipeForShoppingList.defaultServings})
+              </span>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-600 text-center">
+                This will calculate ingredients needed for {selectedServings} serving{selectedServings !== 1 ? 's' : ''} and 
+                subtract what you already have in your inventory.
+              </p>
+            </div>
+
+            <div className="flex justify-end space-x-3">
+              <Button 
+                variant="ghost" 
+                onClick={() => { setShowServingsModal(false); setSelectedRecipeForShoppingList(null); }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="primary" 
+                onClick={handleConfirmServings}
+                leftIcon={<ShoppingCartIcon className="w-4 h-4" />}
+              >
+                Add to Shopping List
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
@@ -1055,20 +1675,41 @@ const RecipesPage: React.FC = () => {
 // Recipe Detail Page
 const RecipeDetailPage: React.FC = () => {
   const { getRecipeById } = useRecipes();
-  const { deductFromInventory } = useInventory();
+  const { validateRecipePreparation, deductIngredientsForPreparation } = useInventory();
   const { setActiveView, viewParams } = useAppState();
   const [showPrepareModal, setShowPrepareModal] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [prepareServings, setPrepareServings] = useState(1);
+  const [preparationValidation, setPreparationValidation] = useState<any>(null);
   const [alertMessage, setAlertMessage] = useState<{type: 'success' | 'error', message: string} | null>(null);
-
+  
+  // New state for dynamic serving size
+  const [currentServings, setCurrentServings] = useState(1);
+  const [scaledIngredients, setScaledIngredients] = useState<ScaledIngredient[]>([]);
 
   const recipe = getRecipeById(viewParams.id || '');
 
   useEffect(() => {
     if (recipe) {
       setPrepareServings(recipe.defaultServings);
+      setCurrentServings(recipe.defaultServings);
+      // Initialize scaled ingredients
+      const scaled = scaleIngredients(recipe.ingredients, recipe.defaultServings, recipe.defaultServings);
+      setScaledIngredients(scaled);
     }
   }, [recipe]);
+
+  // Update scaled ingredients when serving size changes
+  useEffect(() => {
+    if (recipe) {
+      const scaled = scaleIngredients(recipe.ingredients, currentServings, recipe.defaultServings);
+      setScaledIngredients(scaled);
+    }
+  }, [recipe, currentServings]);
+
+  const handleServingsChange = (newServings: number) => {
+    setCurrentServings(newServings);
+  };
 
   if (!recipe) {
     return ( 
@@ -1083,14 +1724,48 @@ const RecipeDetailPage: React.FC = () => {
     );
   }
 
-  const handlePrepareRecipe = () => {
-    recipe.ingredients.forEach(ing => {
-      if (ing.isOptional) return; 
-      const scaledQuantity = (ing.quantity / recipe.defaultServings) * prepareServings;
-      deductFromInventory(ing.ingredientName, scaledQuantity, ing.unit);
-    });
+  const handlePrepareClick = () => {
+    const validation = validateRecipePreparation(recipe, prepareServings);
+    setPreparationValidation(validation);
+    
+    if (!validation.canPrepare) {
+      setAlertMessage({
+        type: 'error', 
+        message: `Cannot prepare recipe: Missing ${validation.missingIngredients.length} ingredient${validation.missingIngredients.length !== 1 ? 's' : ''}`
+      });
+      setTimeout(() => setAlertMessage(null), 5000);
+      return;
+    }
+    
     setShowPrepareModal(false);
-    setAlertMessage({type: 'success', message: `${recipe.name} prepared for ${prepareServings} servings! Inventory updated.`});
+    setShowConfirmationModal(true);
+  };
+
+  const handleConfirmPreparation = () => {
+    const result = deductIngredientsForPreparation(recipe, prepareServings);
+    
+    // Always close the modal first to ensure UI responsiveness
+    setShowConfirmationModal(false);
+    setPreparationValidation(null);
+    
+    if (result.success) {
+      setAlertMessage({
+        type: 'success', 
+        message: `${recipe.name} prepared for ${prepareServings} servings! Ingredients deducted from inventory.`
+      });
+      
+      // Navigate to dashboard after brief delay to show updated inventory
+      setTimeout(() => {
+        setActiveView('dashboard');
+      }, 2000);
+    } else {
+      setAlertMessage({
+        type: 'error', 
+        message: `Preparation failed. ${result.errors.length} ingredient(s) could not be deducted: ${result.errors.join(', ')}`
+      });
+    }
+    
+    // Clear the alert message after 5 seconds
     setTimeout(() => setAlertMessage(null), 5000);
   };
 
@@ -1108,7 +1783,14 @@ const RecipeDetailPage: React.FC = () => {
           <div className="p-6 md:p-8 flex-grow">
             <h1 className="text-3xl lg:text-4xl font-bold text-gray-800 mb-3">{name}</h1>
             <div className="flex flex-wrap items-center text-sm text-gray-600 mb-4">
-              <span className="mr-4">Servings: {defaultServings}</span>
+              {/* Replace static servings display with interactive selector */}
+              <div className="mr-4">
+                <ServingSizeSelector
+                  defaultServings={defaultServings}
+                  currentServings={currentServings}
+                  onServingsChange={handleServingsChange}
+                />
+              </div>
               {prepTime && <span className="mr-4">Prep: {prepTime}</span>}
               {cookTime && <span className="mr-4">Cook: {cookTime}</span>}
             </div>
@@ -1131,26 +1813,28 @@ const RecipeDetailPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="md:col-span-1">
               <h2 className="text-xl font-semibold text-gray-700 mb-3">Ingredients</h2>
-              <ul className="list-disc list-inside space-y-1 text-gray-700">
-                {ingredients.map((ing, index) => (
-                  <li key={index} className={`${ing.isOptional ? 'text-gray-500 italic' : ''}`}>
-                    {ing.quantity} {ing.unit || ''} {ing.ingredientName} {ing.isOptional && "(optional)"}
-                  </li>
-                ))}
-              </ul>
+              {/* Replace static ingredients list with scaled ingredients list */}
+              <ScaledIngredientsList 
+                ingredients={scaledIngredients}
+                showMixedNumbers={true}
+              />
             </div>
             <div className="md:col-span-2">
                <h2 className="text-xl font-semibold text-gray-700 mb-3">Instructions</h2>
-              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line">
-                {instructions || "No instructions provided."}
-              </div>
+              {/* Replace static instructions with interactive instructions */}
+              <InteractiveInstructions
+                instructions={instructions || "No instructions provided."}
+                ingredients={ingredients}
+                currentServings={currentServings}
+                defaultServings={defaultServings}
+              />
             </div>
           </div>
         </div>
          <div className="p-6 md:p-8 border-t border-gray-200 flex justify-end space-x-3">
             <Button 
               variant="success" 
-              onClick={() => { setPrepareServings(recipe.defaultServings); setShowPrepareModal(true); }}
+              onClick={() => { setPrepareServings(currentServings); setShowPrepareModal(true); }}
               leftIcon={<SparklesIcon />}
             >
               Prepare this Recipe
@@ -1178,8 +1862,38 @@ const RecipeDetailPage: React.FC = () => {
             <p className="text-sm text-gray-600">This will deduct the required ingredients from your inventory based on the selected servings.</p>
             <div className="flex justify-end space-x-2 pt-2">
                 <Button variant="ghost" onClick={() => setShowPrepareModal(false)}>Cancel</Button>
-                <Button variant="success" onClick={handlePrepareRecipe}>Confirm & Deduct</Button>
+                <Button variant="success" onClick={handlePrepareClick}>Confirm & Deduct</Button>
             </div>
+        </div>
+      </Modal>
+      <Modal isOpen={showConfirmationModal} onClose={() => setShowConfirmationModal(false)} title={`Confirm Preparation`}>
+        <div className="space-y-4">
+          <p className="font-semibold">Preparing "{recipe.name}" for {prepareServings} serving{prepareServings !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-gray-600">The following ingredients will be deducted from your inventory:</p>
+          
+          {preparationValidation && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-semibold mb-2 text-gray-700">Ingredient Deductions:</h4>
+              <ul className="space-y-2">
+                {recipe.ingredients
+                  .filter(ing => !ing.isOptional)
+                  .map((ing, index) => {
+                    const neededQuantity = (ing.quantity / recipe.defaultServings) * prepareServings;
+                    return (
+                      <li key={index} className="text-sm">
+                        <span className="font-medium">{ing.ingredientName}:</span>{' '}
+                        <span className="text-red-600">-{neededQuantity.toFixed(2)} {ing.unit}</span>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
+          )}
+          
+          <div className="flex justify-end space-x-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowConfirmationModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleConfirmPreparation}>Confirm Preparation</Button>
+          </div>
         </div>
       </Modal>
     </div>
@@ -1249,7 +1963,12 @@ const InventoryPage: React.FC = () => {
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="text-lg font-semibold">{item.ingredientName}</h3>
-                  <p className="text-gray-600">{item.quantity.toFixed(2)} {item.unit}</p>
+                  <p className="text-gray-600">
+                    {isDiscreteUnit(item.unit) 
+                      ? `${Math.round(item.quantity)} ${item.unit}`
+                      : `${item.quantity.toFixed(2)} ${item.unit}`
+                    }
+                  </p>
                   {item.expirationDate && <p className={`text-xs ${expired || expiringSoon ? 'font-semibold' : ''} ${expired ? 'text-red-700' : expiringSoon ? 'text-yellow-700' : 'text-gray-500'}`}>Exp: {new Date(item.expirationDate).toLocaleDateString()} {expired && "(Expired!)"}{!expired && expiringSoon && "(Expiring Soon!)"}</p>}
                   {lowStock && !expired && !expiringSoon && <span className="text-xs text-red-600 font-semibold">Low Stock!</span>}
                   {item.frequencyOfUse && <p className="text-xs text-gray-500">Use: {item.frequencyOfUse}</p>}
@@ -1339,7 +2058,7 @@ interface SelectedOptionalIngredients {
 }
 const ShoppingListGeneratorPage: React.FC = () => {
   const { recipes, getRecipeById } = useRecipes();
-  const { inventory, getInventoryItemByName } = useInventory();
+  const { getInventoryItemByName } = useInventory();
   const { addShoppingList } = useShoppingLists();
   const { setActiveView, viewParams, searchTerm } = useAppState();
   
@@ -1372,7 +2091,7 @@ const ShoppingListGeneratorPage: React.FC = () => {
   };
 
   const handleServingsChange = (recipeId: string, servings: number) => {
-    setServingsOverrides(prev => ({ ...prev, recipeId: Math.max(1, servings) }));
+    setServingsOverrides(prev => ({ ...prev, [recipeId]: Math.max(1, servings) }));
   };
   
   const calculateShoppingList = () => {
@@ -1501,8 +2220,11 @@ const ShoppingListGeneratorPage: React.FC = () => {
                             type="number" 
                             id={`servings-${recipe.id}`}
                             min="1"
+                            max="50"
+                            step="1"
                             value={currentServings}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => handleServingsChange(recipe.id, parseInt(e.target.value))}
+                            onChange={(e: ChangeEvent<HTMLInputElement>) => handleServingsChange(recipe.id, parseInt(e.target.value) || 1)}
+                            onFocus={(e: FocusEvent<HTMLInputElement>) => e.target.select()}
                             className="w-20 p-1.5 text-sm"
                             aria-label={`Servings for ${recipe.name}`}
                         />
@@ -1703,8 +2425,12 @@ const ShoppingListDetailPage: React.FC = () => {
       return item;
     });
     updateShoppingList({ ...shoppingList, items: updatedItems });
-    setAlertMessage(`${itemsAddedCount} item(s) marked as purchased and added to inventory.`);
-    setTimeout(() => setAlertMessage(null), 5000);
+    setAlertMessage(`${itemsAddedCount} item(s) marked as purchased and added to inventory! Redirecting to recipes...`);
+    
+    // Navigate to recipes page after brief delay to show updated inventory status
+    setTimeout(() => {
+      setActiveView('recipes');
+    }, 2000);
   };
   
   const itemsByStore: Record<string, ShoppingListItem[]> = shoppingList.items.reduce((acc, item) => {
@@ -1940,18 +2666,79 @@ const StoreForm: React.FC<StoreFormProps> = ({ initialStore, onSave, onClose }) 
 // --- DASHBOARD PAGE ---
 const DashboardPage: React.FC = () => {
   const { inventory } = useInventory();
+  const { addShoppingList } = useShoppingLists();
+  const { setActiveView } = useAppState();
   const { currentUser } = useAuth();
+  const [alertMessage, setAlertMessage] = useState<{type: 'success' | 'error', message: string} | null>(null);
 
   const expiringSoonItems = inventory.filter(item => isItemExpiringSoon(item.expirationDate, 7) && !isItemExpired(item.expirationDate)).sort((a,b) => new Date(a.expirationDate!).getTime() - new Date(b.expirationDate!).getTime());
   const expiredItems = inventory.filter(item => isItemExpired(item.expirationDate));
   const lowStockItems = inventory.filter(item => item.lowStockThreshold && item.quantity < item.lowStockThreshold && !isItemExpired(item.expirationDate));
   const toConsiderRestocking = inventory.filter(item => item.frequencyOfUse && item.frequencyOfUse !== FrequencyOfUse.OTHER && !lowStockItems.find(lsi => lsi.id === item.id) && !expiringSoonItems.find(esi => esi.id === item.id) && !expiredItems.find(exi => exi.id === item.id)).sort((a,b) => a.ingredientName.localeCompare(b.ingredientName));
 
+  // Helper function to calculate restock quantity
+  const calculateRestockQuantity = (item: InventoryItem): number => {
+    const threshold = item.lowStockThreshold!;
+    const current = item.quantity;
+    const buffer = Math.ceil(threshold * 0.2); // 20% buffer
+    const needed = (threshold - current) + buffer;
+    
+    // Round up to practical quantities
+    return Math.max(1, Math.ceil(needed));
+  };
+
+  // Function to create low stock shopping list
+  const createLowStockShoppingList = () => {
+    if (lowStockItems.length === 0) {
+      setAlertMessage({
+        type: 'error',
+        message: 'No low stock items found to create a shopping list.'
+      });
+      setTimeout(() => setAlertMessage(null), 3000);
+      return;
+    }
+    
+    const shoppingListItems: ShoppingListItem[] = lowStockItems.map(item => {
+      const neededQuantity = calculateRestockQuantity(item);
+      
+      return {
+        id: generateId(),
+        ingredientName: item.ingredientName,
+        neededQuantity,
+        unit: item.unit,
+        recipeSources: [], // No recipe source for restocking
+        purchased: false,
+        storeId: item.defaultStoreId
+      };
+    });
+    
+    const listName = `Low Stock Restocking - ${new Date().toLocaleDateString()}`;
+    const newListId = addShoppingList({
+      name: listName,
+      items: shoppingListItems
+    });
+    
+    // Show success message
+    setAlertMessage({
+      type: 'success',
+      message: `Restocking shopping list created with ${shoppingListItems.length} items!`
+    });
+    setTimeout(() => setAlertMessage(null), 5000);
+    
+    // Navigate to the new shopping list
+    setActiveView('shopping_list_detail', { id: newListId });
+  };
+
   const renderInventoryItem = (item: InventoryItem, context: 'expiring' | 'low' | 'expired' | 'restock') => (
     <li key={`${context}-${item.id}`} className="p-3 bg-white rounded-md shadow-sm flex justify-between items-center">
         <div>
             <span className="font-medium text-gray-800">{item.ingredientName}</span>
-            <span className="text-sm text-gray-600 ml-2">({item.quantity.toFixed(1)} {item.unit})</span>
+            <span className="text-sm text-gray-600 ml-2">
+              ({isDiscreteUnit(item.unit) 
+                ? `${Math.round(item.quantity)} ${item.unit}`
+                : `${item.quantity.toFixed(1)} ${item.unit}`
+              })
+            </span>
             {context === 'expiring' && item.expirationDate && <span className="text-xs text-yellow-600 ml-2">Expires: {new Date(item.expirationDate).toLocaleDateString()}</span>}
             {context === 'expired' && item.expirationDate && <span className="text-xs text-red-700 ml-2">Expired: {new Date(item.expirationDate).toLocaleDateString()}</span>}
             {context === 'low' && item.lowStockThreshold && <span className="text-xs text-red-600 ml-2">Low Stock! (Threshold: {item.lowStockThreshold})</span>}
@@ -1962,6 +2749,7 @@ const DashboardPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4 space-y-8">
+        {alertMessage && <Alert type={alertMessage.type} message={alertMessage.message} onClose={() => setAlertMessage(null)} />}
         <h1 className="text-3xl font-bold text-gray-800">Welcome to your Dashboard, {currentUser?.name}!</h1>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1977,7 +2765,30 @@ const DashboardPage: React.FC = () => {
 
             <Card>
                 <h2 className="text-xl font-semibold text-red-600 mb-3 flex items-center"><ArchiveBoxIcon className="w-5 h-5 mr-2 text-red-600"/>Low Stock Items ({lowStockItems.length})</h2>
-                {lowStockItems.length > 0 ? <ul className="space-y-2 max-h-60 overflow-y-auto pr-1">{lowStockItems.map(item => renderInventoryItem(item, 'low'))}</ul> : <p className="text-sm text-gray-500">No items are currently low on stock based on thresholds.</p>}
+                
+                {lowStockItems.length > 0 && (
+                  <>
+                    <ul className="space-y-2 max-h-60 overflow-y-auto pr-1 mb-4">
+                      {lowStockItems.map(item => renderInventoryItem(item, 'low'))}
+                    </ul>
+                    
+                    <Button
+                      onClick={createLowStockShoppingList}
+                      variant="primary"
+                      size="sm"
+                      leftIcon={<ShoppingCartIcon className="w-4 h-4" />}
+                      className="w-full"
+                    >
+                      Create Restocking Shopping List
+                    </Button>
+                  </>
+                )}
+                
+                {lowStockItems.length === 0 && (
+                  <p className="text-sm text-gray-500">
+                    No items are currently low on stock based on thresholds.
+                  </p>
+                )}
             </Card>
         </div>
          <Card>

@@ -132,6 +132,26 @@ export interface InventoryContextType {
   deleteInventoryItem: (itemId: string) => void;
   getInventoryItemByName: (name: string) => InventoryItem | undefined;
   deductFromInventory: (ingredientName: string, quantity: number, unit: Unit) => boolean; // Returns true if deduction happened
+  validateRecipePreparation: (recipe: Recipe, requestedServings: number) => {
+    canPrepare: boolean;
+    missingIngredients: Array<{
+      name: string;
+      needed: number;
+      available: number;
+      unit: string;
+    }>;
+    warnings: string[];
+  };
+  deductIngredientsForPreparation: (recipe: Recipe, preparedServings: number) => {
+    success: boolean;
+    deductedIngredients: Array<{
+      name: string;
+      amountDeducted: number;
+      unit: string;
+      remainingInInventory: number;
+    }>;
+    errors: string[];
+  };
 }
 
 export interface StoresContextType {
@@ -208,4 +228,31 @@ export interface ParsedIngredient {
   ingredientName: string;
   isOptional: boolean;
   notes?: string; // Additional preparation notes
+}
+
+// --- Recipe Inventory Analysis Types ---
+export interface RecipeInventoryAnalysis {
+  recipeId: string;
+  totalIngredients: number;
+  availableIngredients: number;
+  missingIngredients: MissingIngredient[];
+  completionPercentage: number; // 0-100
+  maxPossibleServings: number;
+  hasAllIngredients: boolean;
+}
+
+export interface MissingIngredient {
+  ingredientName: string;
+  neededQuantity: number;
+  unit: Unit;
+  availableQuantity?: number; // If partially available
+  availableUnit?: Unit;
+}
+
+export interface InventoryMatch {
+  ingredient: RecipeIngredient;
+  inventoryItem?: InventoryItem;
+  availableQuantity: number; // In recipe's unit
+  isFullyAvailable: boolean;
+  conversionSuccessful: boolean;
 }
