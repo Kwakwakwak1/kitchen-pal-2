@@ -11,7 +11,7 @@ import {
 } from './constants';
 import { loadState, saveState } from './localStorageService';
 import { Modal, Button, InputField, TextAreaField, SelectField, Card, SearchInput, EmptyState, AddItemButton, CheckboxField, Alert } from './components';
-import { IngredientCorrectionButton } from './components/IngredientCorrectionButton';
+import { IngredientCorrectionButton, FixAllIngredientsButton } from './components/IngredientCorrectionButton';
 import { scrapeRecipeFromUrl, validateRecipeUrl } from './services/recipeScrapingService';
 import { normalizeScrapedRecipe, validateNormalizedRecipe } from './utils/recipeNormalizer';
 import { detectIngredientIssues, autoFixIngredient, hasIngredientIssues, type IngredientIssue } from './utils/ingredientParser';
@@ -810,6 +810,10 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
     setIngredients(newIngredients);
   };
 
+  const handleFixAll = (fixedIngredients: RecipeIngredient[]) => {
+    setIngredients(fixedIngredients);
+  };
+
   const addIngredientField = () => setIngredients([...ingredients, { ingredientName: '', quantity: 1, unit: Unit.PIECE, isOptional: false }]);
   const removeIngredientField = (index: number) => setIngredients(ingredients.filter((_, i) => i !== index));
 
@@ -898,7 +902,13 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
           <InputField label="Default Servings" id="defaultServings" type="number" value={defaultServings} onChange={e => setDefaultServings(Number(e.target.value))} min="1" required />
           
           <div>
-            <label className="block mb-2 text-sm font-medium text-gray-700">Ingredients</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">Ingredients</label>
+              <FixAllIngredientsButton
+                ingredients={ingredients}
+                onFixAll={handleFixAll}
+              />
+            </div>
             {ingredients.map((ing, index) => (
               <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-center">
                 <div className="col-span-1 flex items-end pb-2.5">
@@ -925,7 +935,7 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
           <InputField label="Source Name (Optional)" id="sourceName" value={sourceName} onChange={e => setSourceName(e.target.value)} />
           <InputField label="Source URL (Optional)" id="sourceUrl" type="url" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} />
           <InputField label="Prep Time (e.g., 30 mins)" id="prepTime" value={prepTime} onChange={e => setPrepTime(e.target.value)} />
-          <InputField label="Cook Time (e.g., 1 hour)" id="cookTime" value={cookTime} onChange={e => setCookTime(e.target.value)} />
+          <InputField label="Cook/Total Time (e.g., 1 hour)" id="cookTime" value={cookTime} onChange={e => setCookTime(e.target.value)} />
           <InputField label="Tags (comma-separated)" id="tags" value={tags} onChange={e => setTags(e.target.value)} />
           
           <div className="flex justify-end space-x-2 pt-4">

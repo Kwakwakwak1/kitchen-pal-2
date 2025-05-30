@@ -286,6 +286,11 @@ function extractRecipeFromHtml(html: string, sourceUrl: string): ScrapedRecipeDa
       '[itemprop="cookTime"]', 
       '.cook-time, .recipe-cook-time'
     ],
+    totalTime: [
+      '[itemprop="totalTime"]',
+      '.total-time, .recipe-total-time',
+      '.time, .recipe-time'
+    ],
     servings: [
       '[itemprop="recipeYield"]',
       '.servings, .recipe-yield, .serves'
@@ -327,6 +332,48 @@ function extractRecipeFromHtml(html: string, sourceUrl: string): ScrapedRecipeDa
     }
   }
 
+  // Extract times
+  let prepTime = '';
+  for (const selector of selectors.prepTime) {
+    const element = root.querySelector(selector);
+    if (element?.text?.trim()) {
+      prepTime = element.text.trim();
+      break;
+    }
+  }
+
+  let cookTime = '';
+  for (const selector of selectors.cookTime) {
+    const element = root.querySelector(selector);
+    if (element?.text?.trim()) {
+      cookTime = element.text.trim();
+      break;
+    }
+  }
+
+  let totalTime = '';
+  for (const selector of selectors.totalTime) {
+    const element = root.querySelector(selector);
+    if (element?.text?.trim()) {
+      totalTime = element.text.trim();
+      break;
+    }
+  }
+
+  // Extract servings
+  let servings = undefined;
+  for (const selector of selectors.servings) {
+    const element = root.querySelector(selector);
+    if (element?.text?.trim()) {
+      const servingsText = element.text.trim();
+      const match = servingsText.match(/\d+/);
+      if (match) {
+        servings = parseInt(match[0]);
+      }
+      break;
+    }
+  }
+
   // If no complete recipe data found, return null
   if (!name || ingredients.length === 0 || !instructions) {
     return null;
@@ -336,6 +383,10 @@ function extractRecipeFromHtml(html: string, sourceUrl: string): ScrapedRecipeDa
     name,
     ingredients,
     instructions,
+    prepTime: prepTime || undefined,
+    cookTime: cookTime || undefined,
+    totalTime: totalTime || undefined,
+    servings,
     sourceUrl,
     sourceName: new URL(sourceUrl).hostname
   };

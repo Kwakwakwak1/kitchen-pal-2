@@ -31,7 +31,13 @@ export function normalizeScrapedRecipe(scrapedData: ScrapedRecipeData): Omit<Rec
 
   // Clean up times - ensure they're in a readable format
   const prepTime = normalizeTimeString(scrapedData.prepTime);
-  const cookTime = normalizeTimeString(scrapedData.cookTime);
+  let cookTime = normalizeTimeString(scrapedData.cookTime);
+  
+  // If no cook time but we have total time, use that as cook time
+  // This handles cases where recipes only provide total time
+  if (!cookTime && scrapedData.totalTime) {
+    cookTime = normalizeTimeString(scrapedData.totalTime);
+  }
 
   // Process tags
   const tags = scrapedData.tags?.filter(tag => tag && tag.trim()) || [];
