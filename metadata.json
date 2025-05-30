@@ -1,0 +1,7 @@
+
+{
+  "name": "Kitchen Pal",
+  "description": "A comprehensive kitchen management app for recipes, inventory, shopping lists, and stores, now with user accounts, profile management, and personalized data storage. Features smart assistance and a dashboard.",
+  "requestFramePermissions": [],
+  "prompt": "This is Kitchen Pal, an application designed to help users manage their recipes, track kitchen inventory, generate smart shopping lists, and organize information about their favorite stores. It supports user sign-up, login, and profile management (name, email, avatar, preferences). All data such as recipes, inventory, and shopping lists are specific to the logged-in user. It features a dashboard for quick insights into inventory status like low stock or expiring items. Users can add recipes with optional ingredients, prepare recipes (which deducts from inventory), and manage inventory items with details like expiration dates and frequency of use. Shopping lists can be generated from multiple recipes, considering existing inventory, and items marked as purchased will update the inventory."
+}
