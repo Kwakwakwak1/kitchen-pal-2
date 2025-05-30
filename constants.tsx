@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Unit, FrequencyOfUse, MeasurementSystem } from './types';
 
@@ -198,6 +197,11 @@ export const ArrowLeftOnRectangleIcon = ({ className = "w-6 h-6" }: { className?
   </svg>
 );
 
+export const WrenchScrewdriverIcon = ({ className = "w-5 h-5" }: { className?: string }): React.ReactElement => ( // For fixing/correcting
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655-4.653a2.548 2.548 0 1 1 0-3.586l6.837 6.837M5.904 8.925l6.837 6.837M8.925 5.904l6.837 6.837M4.875 8.925h.008v.008H4.875V8.925z" />
+  </svg>
+);
 
 export const DEFAULT_RECIPE_IMAGE = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=400&q=80"; // More generic food image
 export const DEFAULT_AVATAR_IMAGE = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&ixlib=rb-1.2.1&auto=format&fit=crop&w=100&q=80";

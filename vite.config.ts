@@ -12,6 +12,18 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      server: {
+        proxy: {
+          '/api/recipe-proxy': {
+            target: 'http://localhost:3001',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/recipe-proxy/, ''),
+            configure: (proxy, options) => {
+              // Custom proxy configuration if needed
+            }
+          }
+        }
       }
     };
 });

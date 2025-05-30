@@ -1,4 +1,3 @@
-
 export enum Unit {
   GRAM = 'g',
   KILOGRAM = 'kg',
@@ -118,7 +117,6 @@ export interface AuthContextType {
   isLoadingAuth: boolean;
 }
 
-
 export interface RecipesContextType {
   recipes: Recipe[];
   addRecipe: (recipe: Omit<Recipe, 'id' | 'imageUrl'>) => void;
@@ -163,4 +161,51 @@ export interface AppStateContextType {
   viewParams: Record<string, string>;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
+}
+
+// --- Recipe URL Import Types ---
+export interface ScrapedIngredient {
+  text: string; // Original text from recipe
+  name?: string; // Parsed ingredient name
+  quantity?: number; // Parsed quantity
+  unit?: string; // Parsed unit
+}
+
+export interface ScrapedNutrition {
+  calories?: number;
+  servingSize?: string;
+  // Additional nutrition info if available
+}
+
+export interface ScrapedRecipeData {
+  name: string;
+  description?: string;
+  ingredients: ScrapedIngredient[];
+  instructions: string | string[];
+  prepTime?: string;
+  cookTime?: string;
+  totalTime?: string;
+  servings?: number;
+  author?: string;
+  sourceUrl: string;
+  sourceName?: string;
+  tags?: string[];
+  imageUrl?: string;
+  nutrition?: ScrapedNutrition;
+}
+
+export interface RecipeScrapingResult {
+  success: boolean;
+  data?: ScrapedRecipeData;
+  error?: string;
+  warnings?: string[];
+}
+
+export interface ParsedIngredient {
+  originalText: string;
+  quantity: number;
+  unit: Unit;
+  ingredientName: string;
+  isOptional: boolean;
+  notes?: string; // Additional preparation notes
 }

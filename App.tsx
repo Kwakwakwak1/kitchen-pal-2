@@ -1,17 +1,20 @@
-
 import React, { useState, useEffect, createContext, useContext, useCallback, ReactNode, FormEvent, ReactElement, ChangeEvent } from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate, useParams, useLocation, Navigate } from 'react-router-dom';
 import { 
   Recipe, RecipeIngredient, InventoryItem, Store, ShoppingList, ShoppingListItem, Unit, FrequencyOfUse, MeasurementSystem, User, UserPreferences,
-  RecipesContextType, InventoryContextType, StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView
+  RecipesContextType, InventoryContextType, StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView, ScrapedRecipeData
 } from './types';
 import { 
   generateId, UNITS_ARRAY, FREQUENCY_OF_USE_OPTIONS, MEASUREMENT_SYSTEM_OPTIONS, normalizeIngredientName, convertUnit, isItemExpiringSoon, isItemExpired, APP_NAME,
-  BookOpenIcon, ArchiveBoxIcon, ShoppingCartIcon, BuildingStorefrontIcon, PlusIcon, TrashIcon, PencilIcon, ArrowLeftIcon, MagnifyingGlassIcon, DEFAULT_RECIPE_IMAGE, DEFAULT_AVATAR_IMAGE, CalendarIcon, SparklesIcon, CubeTransparentIcon, UserCircleIcon, ArrowRightOnRectangleIcon, UserPlusIcon, ArrowLeftOnRectangleIcon,
+  BookOpenIcon, ArchiveBoxIcon, ShoppingCartIcon, BuildingStorefrontIcon, PlusIcon, TrashIcon, PencilIcon, ArrowLeftIcon, MagnifyingGlassIcon, DEFAULT_RECIPE_IMAGE, DEFAULT_AVATAR_IMAGE, CalendarIcon, SparklesIcon, CubeTransparentIcon, UserCircleIcon, ArrowRightOnRectangleIcon, UserPlusIcon, ArrowLeftOnRectangleIcon, WrenchScrewdriverIcon,
   LOCAL_STORAGE_USERS_KEY, ACTIVE_USER_ID_KEY
 } from './constants';
 import { loadState, saveState } from './localStorageService';
 import { Modal, Button, InputField, TextAreaField, SelectField, Card, SearchInput, EmptyState, AddItemButton, CheckboxField, Alert } from './components';
+import { IngredientCorrectionButton } from './components/IngredientCorrectionButton';
+import { scrapeRecipeFromUrl, validateRecipeUrl } from './services/recipeScrapingService';
+import { normalizeScrapedRecipe, validateNormalizedRecipe } from './utils/recipeNormalizer';
+import { detectIngredientIssues, autoFixIngredient, hasIngredientIssues, type IngredientIssue } from './utils/ingredientParser';
 
 // --- CONTEXTS ---
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -513,6 +516,270 @@ const AppStateProvider: React.FC<{children: ReactNode}> = ({ children }) => {
 
 // --- UI COMPONENTS (Feature Specific) ---
 
+// Recipe URL Import Component
+interface RecipeUrlImportProps {
+  onImport: (recipe: Omit<Recipe, 'id' | 'imageUrl'>) => void;
+  onCancel: () => void;
+}
+
+interface ImportState {
+  status: 'idle' | 'loading' | 'success' | 'error' | 'preview';
+  data?: ScrapedRecipeData;
+  normalizedData?: Omit<Recipe, 'id' | 'imageUrl'>;
+  error?: string;
+  warnings?: string[];
+}
+
+const RecipeUrlImport: React.FC<RecipeUrlImportProps> = ({ onImport, onCancel }) => {
+  const [url, setUrl] = useState('');
+  const [importState, setImportState] = useState<ImportState>({ status: 'idle' });
+
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUrl(e.target.value);
+    // Reset state when URL changes
+    if (importState.status !== 'idle') {
+      setImportState({ status: 'idle' });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!url.trim()) return;
+
+    // Validate URL format first
+    const validation = validateRecipeUrl(url.trim());
+    if (!validation.isValid) {
+      setImportState({
+        status: 'error',
+        error: validation.error
+      });
+      return;
+    }
+
+    setImportState({ status: 'loading' });
+
+    try {
+      const result = await scrapeRecipeFromUrl(url.trim());
+      
+      if (!result.success) {
+        setImportState({
+          status: 'error',
+          error: result.error,
+          warnings: result.warnings
+        });
+        return;
+      }
+
+      // Normalize the scraped data
+      const normalizedData = normalizeScrapedRecipe(result.data!);
+      
+      // Validate the normalized data
+      const validation = validateNormalizedRecipe(normalizedData);
+      if (!validation.isValid) {
+        setImportState({
+          status: 'error',
+          error: `Recipe validation failed: ${validation.errors.join(', ')}`,
+          data: result.data
+        });
+        return;
+      }
+
+      setImportState({
+        status: 'preview',
+        data: result.data,
+        normalizedData,
+        warnings: result.warnings
+      });
+
+    } catch (error) {
+      setImportState({
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    }
+  };
+
+  const handleConfirmImport = () => {
+    if (importState.normalizedData) {
+      onImport(importState.normalizedData);
+    }
+  };
+
+  const handleRetry = () => {
+    setImportState({ status: 'idle' });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* URL Input Section */}
+      <div>
+        <InputField
+          label="Recipe URL"
+          id="recipeUrl"
+          type="url"
+          value={url}
+          onChange={handleUrlChange}
+          placeholder="https://example.com/recipe"
+          required
+          disabled={importState.status === 'loading'}
+          error={importState.status === 'error' ? importState.error : undefined}
+        />
+        <p className="text-sm text-gray-500 mt-1">
+          Enter the URL of a recipe page from any cooking website
+        </p>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex space-x-2">
+        <Button
+          type="button"
+          variant="primary"
+          onClick={handleImport}
+          disabled={!url.trim() || importState.status === 'loading'}
+        >
+          {importState.status === 'loading' ? 'Importing...' : 'Import Recipe'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onCancel}
+          disabled={importState.status === 'loading'}
+        >
+          Cancel
+        </Button>
+        {importState.status === 'error' && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleRetry}
+          >
+            Try Again
+          </Button>
+        )}
+      </div>
+
+      {/* Loading State */}
+      {importState.status === 'loading' && (
+        <Card className="p-4">
+          <div className="flex items-center space-x-3">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <div>
+              <p className="font-medium">Importing recipe...</p>
+              <p className="text-sm text-gray-500">This may take a few seconds</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Error State */}
+      {importState.status === 'error' && (
+        <Card className="p-4 border-red-200 bg-red-50">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <div className="w-5 h-5 text-red-400">⚠️</div>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">Import Failed</h3>
+              <p className="text-sm text-red-700 mt-1">{importState.error}</p>
+              {importState.warnings && importState.warnings.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-sm font-medium text-red-800">Warnings:</p>
+                  <ul className="text-sm text-red-700 list-disc list-inside">
+                    {importState.warnings.map((warning, i) => (
+                      <li key={i}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Preview State */}
+      {importState.status === 'preview' && importState.normalizedData && (
+        <Card className="p-4">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-green-800">Recipe Found!</h3>
+              <span className="text-sm text-green-600">✓ Ready to import</span>
+            </div>
+            
+            {/* Recipe Preview */}
+            <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+              <div>
+                <h4 className="font-semibold text-lg">{importState.normalizedData.name}</h4>
+                {importState.normalizedData.sourceName && (
+                  <p className="text-sm text-gray-600">From: {importState.normalizedData.sourceName}</p>
+                )}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-medium">Servings:</span> {importState.normalizedData.defaultServings}
+                </div>
+                {importState.normalizedData.prepTime && (
+                  <div>
+                    <span className="font-medium">Prep Time:</span> {importState.normalizedData.prepTime}
+                  </div>
+                )}
+                {importState.normalizedData.cookTime && (
+                  <div>
+                    <span className="font-medium">Cook Time:</span> {importState.normalizedData.cookTime}
+                  </div>
+                )}
+                <div>
+                  <span className="font-medium">Ingredients:</span> {importState.normalizedData.ingredients.length}
+                </div>
+              </div>
+
+              {importState.normalizedData.tags && importState.normalizedData.tags.length > 0 && (
+                <div>
+                  <span className="font-medium text-sm">Tags: </span>
+                  {importState.normalizedData.tags.map(tag => (
+                    <span key={tag} className="inline-block bg-gray-200 rounded px-2 py-0.5 text-xs mr-1">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Warnings */}
+            {importState.warnings && importState.warnings.length > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 p-3 rounded">
+                <p className="text-sm font-medium text-yellow-800">Note:</p>
+                <ul className="text-sm text-yellow-700 list-disc list-inside mt-1">
+                  {importState.warnings.map((warning, i) => (
+                    <li key={i}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex space-x-2 pt-2">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleConfirmImport}
+              >
+                Import This Recipe
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleRetry}
+              >
+                Try Different URL
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+};
+
 // Recipe Form
 interface RecipeFormProps {
   initialRecipe?: Recipe;
@@ -520,6 +787,7 @@ interface RecipeFormProps {
   onClose: () => void;
 }
 const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose }) => {
+  const [showUrlImport, setShowUrlImport] = useState(false);
   const [name, setName] = useState(initialRecipe?.name || '');
   const [defaultServings, setDefaultServings] = useState(initialRecipe?.defaultServings || 4);
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(initialRecipe?.ingredients || [{ ingredientName: '', quantity: 1, unit: Unit.PIECE, isOptional: false }]);
@@ -536,8 +804,30 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
     setIngredients(newIngredients);
   };
 
+  const handleIngredientFix = (index: number, fixedIngredient: RecipeIngredient) => {
+    const newIngredients = [...ingredients];
+    newIngredients[index] = fixedIngredient;
+    setIngredients(newIngredients);
+  };
+
   const addIngredientField = () => setIngredients([...ingredients, { ingredientName: '', quantity: 1, unit: Unit.PIECE, isOptional: false }]);
   const removeIngredientField = (index: number) => setIngredients(ingredients.filter((_, i) => i !== index));
+
+  const handleUrlImport = (importedRecipe: Omit<Recipe, 'id' | 'imageUrl'>) => {
+    // Populate form fields with imported data
+    setName(importedRecipe.name);
+    setDefaultServings(importedRecipe.defaultServings);
+    setIngredients(importedRecipe.ingredients);
+    setInstructions(importedRecipe.instructions);
+    setSourceName(importedRecipe.sourceName || '');
+    setSourceUrl(importedRecipe.sourceUrl || '');
+    setPrepTime(importedRecipe.prepTime || '');
+    setCookTime(importedRecipe.cookTime || '');
+    setTags(importedRecipe.tags?.join(', ') || '');
+    
+    // Hide URL import section
+    setShowUrlImport(false);
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -560,41 +850,91 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
     onClose();
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <InputField label="Recipe Name" id="recipeName" value={name} onChange={e => setName(e.target.value)} required />
-      <InputField label="Default Servings" id="defaultServings" type="number" value={defaultServings} onChange={e => setDefaultServings(Number(e.target.value))} min="1" required />
-      
-      <div>
-        <label className="block mb-2 text-sm font-medium text-gray-700">Ingredients</label>
-        {ingredients.map((ing, index) => (
-          <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-center">
-            <InputField containerClassName="col-span-4" placeholder="Ingredient Name" value={ing.ingredientName} onChange={e => handleIngredientChange(index, 'ingredientName', e.target.value)} aria-label={`Ingredient name ${index + 1}`} />
-            <InputField containerClassName="col-span-2" type="number" placeholder="Qty" value={ing.quantity} onChange={e => handleIngredientChange(index, 'quantity', Number(e.target.value))} min="0" step="any" aria-label={`Ingredient quantity ${index + 1}`} />
-            <SelectField containerClassName="col-span-3" options={UNITS_ARRAY.map(u => ({value: u, label: u}))} value={ing.unit} onChange={e => handleIngredientChange(index, 'unit', e.target.value as Unit)} aria-label={`Ingredient unit ${index + 1}`} />
-            <CheckboxField containerClassName="col-span-2 justify-self-start self-end pb-2.5" id={`optional-${index}`} label="Optional" checked={ing.isOptional || false} onChange={e => handleIngredientChange(index, 'isOptional', e.target.checked)} />
-            <div className="col-span-1 flex items-end pb-2.5">
-              <Button type="button" variant="danger" size="sm" onClick={() => removeIngredientField(index)} className="p-1.5" aria-label={`Remove ingredient ${index + 1}`}>
-                <TrashIcon className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
-        <Button type="button" variant="secondary" size="sm" onClick={addIngredientField} leftIcon={<PlusIcon className="w-4 h-4"/>}>Add Ingredient</Button>
-      </div>
+  // Don't show URL import for editing existing recipes
+  const canShowUrlImport = !initialRecipe;
 
-      <TextAreaField label="Instructions" id="instructions" value={instructions} onChange={e => setInstructions(e.target.value)} />
-      <InputField label="Source Name (Optional)" id="sourceName" value={sourceName} onChange={e => setSourceName(e.target.value)} />
-      <InputField label="Source URL (Optional)" id="sourceUrl" type="url" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} />
-      <InputField label="Prep Time (e.g., 30 mins)" id="prepTime" value={prepTime} onChange={e => setPrepTime(e.target.value)} />
-      <InputField label="Cook Time (e.g., 1 hour)" id="cookTime" value={cookTime} onChange={e => setCookTime(e.target.value)} />
-      <InputField label="Tags (comma-separated)" id="tags" value={tags} onChange={e => setTags(e.target.value)} />
-      
-      <div className="flex justify-end space-x-2 pt-4">
-        <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button type="submit" variant="primary">Save Recipe</Button>
-      </div>
-    </form>
+  return (
+    <div className="space-y-4">
+      {/* URL Import Toggle - only show for new recipes */}
+      {canShowUrlImport && (
+        <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+          <div>
+            <h3 className="text-lg font-medium">Add Recipe</h3>
+            <p className="text-sm text-gray-500">Create manually or import from a URL</p>
+          </div>
+          <div className="flex space-x-2">
+            <Button
+              type="button"
+              variant={!showUrlImport ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={() => setShowUrlImport(false)}
+            >
+              Manual Entry
+            </Button>
+            <Button
+              type="button"
+              variant={showUrlImport ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={() => setShowUrlImport(true)}
+            >
+              Import from URL
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* URL Import Component */}
+      {showUrlImport && canShowUrlImport && (
+        <RecipeUrlImport
+          onImport={handleUrlImport}
+          onCancel={() => setShowUrlImport(false)}
+        />
+      )}
+
+      {/* Manual Recipe Form */}
+      {!showUrlImport && (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <InputField label="Recipe Name" id="recipeName" value={name} onChange={e => setName(e.target.value)} required />
+          <InputField label="Default Servings" id="defaultServings" type="number" value={defaultServings} onChange={e => setDefaultServings(Number(e.target.value))} min="1" required />
+          
+          <div>
+            <label className="block mb-2 text-sm font-medium text-gray-700">Ingredients</label>
+            {ingredients.map((ing, index) => (
+              <div key={index} className="grid grid-cols-12 gap-2 mb-2 items-center">
+                <div className="col-span-1 flex items-end pb-2.5">
+                  <IngredientCorrectionButton
+                    ingredient={ing}
+                    onFix={(fixedIngredient) => handleIngredientFix(index, fixedIngredient)}
+                  />
+                </div>
+                <InputField containerClassName="col-span-4" placeholder="Ingredient Name" value={ing.ingredientName} onChange={e => handleIngredientChange(index, 'ingredientName', e.target.value)} aria-label={`Ingredient name ${index + 1}`} />
+                <InputField containerClassName="col-span-2" type="number" placeholder="Qty" value={ing.quantity} onChange={e => handleIngredientChange(index, 'quantity', Number(e.target.value))} min="0" step="any" aria-label={`Ingredient quantity ${index + 1}`} />
+                <SelectField containerClassName="col-span-2" options={UNITS_ARRAY.map(u => ({value: u, label: u}))} value={ing.unit} onChange={e => handleIngredientChange(index, 'unit', e.target.value as Unit)} aria-label={`Ingredient unit ${index + 1}`} />
+                <CheckboxField containerClassName="col-span-2 justify-self-start self-end pb-2.5" id={`optional-${index}`} label="Optional" checked={ing.isOptional || false} onChange={e => handleIngredientChange(index, 'isOptional', e.target.checked)} />
+                <div className="col-span-1 flex items-end pb-2.5">
+                  <Button type="button" variant="danger" size="sm" onClick={() => removeIngredientField(index)} className="p-1.5" aria-label={`Remove ingredient ${index + 1}`}>
+                    <TrashIcon className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button type="button" variant="secondary" size="sm" onClick={addIngredientField} leftIcon={<PlusIcon className="w-4 h-4"/>}>Add Ingredient</Button>
+          </div>
+
+          <TextAreaField label="Instructions" id="instructions" value={instructions} onChange={e => setInstructions(e.target.value)} />
+          <InputField label="Source Name (Optional)" id="sourceName" value={sourceName} onChange={e => setSourceName(e.target.value)} />
+          <InputField label="Source URL (Optional)" id="sourceUrl" type="url" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} />
+          <InputField label="Prep Time (e.g., 30 mins)" id="prepTime" value={prepTime} onChange={e => setPrepTime(e.target.value)} />
+          <InputField label="Cook Time (e.g., 1 hour)" id="cookTime" value={cookTime} onChange={e => setCookTime(e.target.value)} />
+          <InputField label="Tags (comma-separated)" id="tags" value={tags} onChange={e => setTags(e.target.value)} />
+          
+          <div className="flex justify-end space-x-2 pt-4">
+            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button type="submit" variant="primary">Save Recipe</Button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 };
 
@@ -619,7 +959,9 @@ const RecipeCard: React.FC<{ recipe: Recipe; onSelect: () => void; onDelete: () 
         {recipe.tags && recipe.tags.length > 0 && (
           <div className="mt-2">
             {recipe.tags.map(tag => (
-              <span key={tag} className="inline-block bg-gray-200 rounded-full px-2 py-0.5 text-xs font-semibold text-gray-700 mr-1 mb-1">{tag}</span>
+              <span key={tag} className="inline-block bg-gray-200 rounded px-2 py-0.5 text-xs mr-1">
+                {tag}
+              </span>
             ))}
           </div>
         )}
@@ -2041,7 +2383,7 @@ const AppLayout: React.FC = () => {
   );
 }
 
-function App(): JSX.Element {
+function App(): React.JSX.Element {
   return (
     <HashRouter>
       <AuthProvider>
