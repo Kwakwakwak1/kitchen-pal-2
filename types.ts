@@ -49,6 +49,12 @@ export enum FrequencyOfUse {
   OTHER = 'other',
 }
 
+export enum ShoppingListStatus {
+  ACTIVE = 'active',           // List is in progress
+  COMPLETED = 'completed',     // All items purchased, but not archived
+  ARCHIVED = 'archived'        // Completed list that has been archived
+}
+
 export interface InventoryItem {
   id: string;
   ingredientName: string; // Normalized name
@@ -83,6 +89,9 @@ export interface ShoppingList {
   createdAt: string; // ISO date string
   items: ShoppingListItem[];
   notes?: string;
+  status: ShoppingListStatus;        // NEW: Status tracking
+  completedAt?: string;              // NEW: When list was completed (all items purchased)
+  archivedAt?: string;               // NEW: When list was archived
 }
 
 // --- NEW: Authentication & User Types ---
@@ -95,6 +104,9 @@ export interface UserPreferences {
   defaultStoreId?: string;
   measurementSystem?: MeasurementSystem;
   avatarUrl?: string;
+  autoArchiveCompletedLists?: boolean;           // NEW: Auto-archive setting
+  autoArchiveAfterDays?: number;                 // NEW: Days before auto-archive (default: 30)
+  deleteArchivedAfterDays?: number;              // NEW: Days before auto-delete archived (default: 365)
 }
 
 export interface User {
@@ -164,10 +176,17 @@ export interface StoresContextType {
 
 export interface ShoppingListsContextType {
   shoppingLists: ShoppingList[];
-  addShoppingList: (list: Omit<ShoppingList, 'id' | 'createdAt'>) => string; // returns new list ID
+  archivedShoppingLists: ShoppingList[];     // NEW: Separate archived lists
+  addShoppingList: (list: Omit<ShoppingList, 'id' | 'createdAt' | 'status'>) => string; // returns new list ID
   updateShoppingList: (list: ShoppingList) => void;
   deleteShoppingList: (listId: string) => void;
+  archiveShoppingList: (listId: string) => void;        // NEW: Archive a completed list
+  unarchiveShoppingList: (listId: string) => void;      // NEW: Restore from archive
+  deleteArchivedShoppingList: (listId: string) => void; // NEW: Permanently delete archived
   getShoppingListById: (listId: string) => ShoppingList | undefined;
+  bulkDeleteShoppingLists: (listIds: string[]) => void;           // NEW: Bulk operations
+  bulkArchiveShoppingLists: (listIds: string[]) => void;          // NEW: Bulk archive
+  bulkDeleteArchivedShoppingLists: (listIds: string[]) => void;   // NEW: Bulk delete archived
 }
 
 export type ActiveView = 

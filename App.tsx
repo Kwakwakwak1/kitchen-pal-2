@@ -1,8 +1,8 @@
-import React, { useState, useEffect, createContext, useContext, useCallback, ReactNode, FormEvent, ReactElement, ChangeEvent, FocusEvent } from 'react';
+import React, { useState, useEffect, createContext, useContext, useCallback, ReactNode, FormEvent, ReactElement, ChangeEvent, FocusEvent, useMemo } from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { 
   Recipe, RecipeIngredient, InventoryItem, Store, ShoppingList, ShoppingListItem, Unit, FrequencyOfUse, MeasurementSystem, User, UserPreferences,
-  RecipesContextType, InventoryContextType, StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView, ScrapedRecipeData, RecipeInventoryAnalysis
+  RecipesContextType, InventoryContextType, StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView, ScrapedRecipeData, RecipeInventoryAnalysis, ShoppingListStatus
 } from './types';
 import { saveState, loadState } from './localStorageService';
 import { 
@@ -13,6 +13,7 @@ import {
   BookOpenIcon, ArchiveBoxIcon, ShoppingCartIcon, BuildingStorefrontIcon, PlusIcon, TrashIcon, PencilIcon,
   ArrowLeftIcon, MagnifyingGlassIcon, DEFAULT_RECIPE_IMAGE, DEFAULT_AVATAR_IMAGE,
   CalendarIcon, SparklesIcon, CubeTransparentIcon, UserCircleIcon, ArrowRightOnRectangleIcon, UserPlusIcon, ArrowLeftOnRectangleIcon,
+  XMarkIcon, ArrowPathIcon
 } from './constants';
 import { Modal, Button, InputField, TextAreaField, SelectField, Card, SearchInput, EmptyState, AddItemButton, CheckboxField, Alert } from './components';
 import { IngredientCorrectionButton, FixAllIngredientsButton } from './components/IngredientCorrectionButton';
@@ -24,6 +25,8 @@ import { ServingSizeSelector } from './components/ServingSizeSelector';
 import { ScaledIngredientsList } from './components/ScaledIngredientsList';
 import { scaleIngredients, type ScaledIngredient } from './utils/recipeScaling';
 import { InteractiveInstructions } from './components/InteractiveInstructions';
+import { analyzeRecipeInventory } from './utils/recipeAnalyzer';
+import { ShoppingListDetailPage } from './src/pages/ShoppingListDetailPage';
 
 
 // --- INVENTORY ANALYSIS COMPONENTS ---
@@ -450,7 +453,6 @@ const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const deductFromInventory = (ingredientName: string, quantity: number, unit: Unit): boolean => {
     if (!currentUser) return false;
     const normalizedName = normalizeIngredientName(ingredientName);
-    let deductionHappened = false;
     
     // Find the inventory item first to validate the deduction
     const inventoryItem = inventory.find(item => 
@@ -475,6 +477,9 @@ const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       return false;
     }
     
+    // If we reach here, the deduction is valid and will succeed
+    console.log(`Deduction will succeed for ${ingredientName}: ${convertedQuantityToDeduct} ${inventoryItem.unit}`);
+    
     // Perform the deduction by creating NEW objects (no direct mutation)
     setInventory(prevInventory => 
       prevInventory.map(item => {
@@ -483,8 +488,6 @@ const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
           
           // Apply proper rounding based on unit type
           const formattedQuantity = formatQuantityForUnit(newQuantity, item.unit);
-          
-          deductionHappened = true;
           
           console.log(`Deducted ${convertedQuantityToDeduct} ${item.unit} of ${ingredientName}. Remaining: ${formattedQuantity} ${item.unit}`);
           
@@ -505,7 +508,8 @@ const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
       })
     );
     
-    return deductionHappened;
+    // Return true since we've validated the deduction and performed it
+    return true;
   };
 
   // Enhanced function for recipe preparation with validation
@@ -744,39 +748,83 @@ const StoresProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 const ShoppingListsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
   const userShoppingListsKey = currentUser ? `shoppingLists_${currentUser.id}` : null;
+  const userArchivedListsKey = currentUser ? `archivedShoppingLists_${currentUser.id}` : null;
   const globalShoppingListsKey = 'shoppingLists';
   
+  // Migration function for existing data
+  const migrateShoppingListsToNewFormat = (existingLists: any[]): ShoppingList[] => {
+    return existingLists.map(list => ({
+      ...list,
+      status: determineListStatus(list),
+      completedAt: list.items && list.items.every((item: any) => item.purchased) ? list.createdAt : undefined,
+      archivedAt: undefined
+    }));
+  };
+
+  const determineListStatus = (list: any): ShoppingListStatus => {
+    if (!list.items || list.items.length === 0) return ShoppingListStatus.ACTIVE;
+    if (list.items.every((item: any) => item.purchased)) return ShoppingListStatus.COMPLETED;
+    return ShoppingListStatus.ACTIVE;
+  };
+
   const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>(() => {
     if (currentUser && userShoppingListsKey) {
       const userSpecificData = loadState<ShoppingList[]>(userShoppingListsKey);
-      if (userSpecificData) return userSpecificData;
+      if (userSpecificData) {
+        // Check if data needs migration (doesn't have status field)
+        const needsMigration = userSpecificData.some((list: any) => !list.status);
+        return needsMigration ? migrateShoppingListsToNewFormat(userSpecificData) : userSpecificData;
+      }
       const globalData = loadState<ShoppingList[]>(globalShoppingListsKey);
       if (globalData) {
-        saveState(userShoppingListsKey, globalData);
-        return globalData;
+        const migratedData = migrateShoppingListsToNewFormat(globalData);
+        saveState(userShoppingListsKey, migratedData);
+        return migratedData;
       }
     }
     return [];
   });
 
- useEffect(() => {
+  const [archivedShoppingLists, setArchivedShoppingLists] = useState<ShoppingList[]>(() => {
+    if (currentUser && userArchivedListsKey) {
+      const archivedData = loadState<ShoppingList[]>(userArchivedListsKey);
+      return archivedData || [];
+    }
+    return [];
+  });
+
+  useEffect(() => {
     if (currentUser && userShoppingListsKey) {
       const userSpecificData = loadState<ShoppingList[]>(userShoppingListsKey);
       if (userSpecificData) {
-        setShoppingLists(userSpecificData);
+        const needsMigration = userSpecificData.some((list: any) => !list.status);
+        const finalData = needsMigration ? migrateShoppingListsToNewFormat(userSpecificData) : userSpecificData;
+        setShoppingLists(finalData);
+        if (needsMigration) {
+          saveState(userShoppingListsKey, finalData);
+        }
       } else {
         const globalData = loadState<ShoppingList[]>(globalShoppingListsKey);
         if (globalData) {
-          setShoppingLists(globalData);
-          saveState(userShoppingListsKey, globalData);
+          const migratedData = migrateShoppingListsToNewFormat(globalData);
+          setShoppingLists(migratedData);
+          saveState(userShoppingListsKey, migratedData);
         } else {
           setShoppingLists([]);
         }
       }
     } else if (!currentUser) {
       setShoppingLists([]);
+      setArchivedShoppingLists([]);
     }
   }, [currentUser, userShoppingListsKey]);
+
+  useEffect(() => {
+    if (currentUser && userArchivedListsKey) {
+      const archivedData = loadState<ShoppingList[]>(userArchivedListsKey);
+      setArchivedShoppingLists(archivedData || []);
+    }
+  }, [currentUser, userArchivedListsKey]);
 
   useEffect(() => {
     if (userShoppingListsKey && currentUser) {
@@ -784,23 +832,133 @@ const ShoppingListsProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, [shoppingLists, userShoppingListsKey, currentUser]);
 
-  const addShoppingList = (listData: Omit<ShoppingList, 'id' | 'createdAt'>): string => {
+  useEffect(() => {
+    if (userArchivedListsKey && currentUser) {
+      saveState(userArchivedListsKey, archivedShoppingLists);
+    }
+  }, [archivedShoppingLists, userArchivedListsKey, currentUser]);
+
+  const addShoppingList = (listData: Omit<ShoppingList, 'id' | 'createdAt' | 'status'>): string => {
     if (!currentUser) return '';
-    const newList = { ...listData, id: generateId(), createdAt: new Date().toISOString() };
+    const newList: ShoppingList = { 
+      ...listData, 
+      id: generateId(), 
+      createdAt: new Date().toISOString(),
+      status: ShoppingListStatus.ACTIVE
+    };
     setShoppingLists(prev => [newList, ...prev]);
     return newList.id;
   };
+
   const updateShoppingList = (updatedList: ShoppingList) => {
     if (!currentUser) return;
-    setShoppingLists(prev => prev.map(sl => sl.id === updatedList.id ? updatedList : sl));
-  }
+    
+    // Auto-update status based on items
+    const allItemsPurchased = updatedList.items.length > 0 && updatedList.items.every(item => item.purchased);
+    const updatedStatus = allItemsPurchased ? ShoppingListStatus.COMPLETED : ShoppingListStatus.ACTIVE;
+    
+    const finalList = {
+      ...updatedList,
+      status: updatedStatus,
+      completedAt: allItemsPurchased && !updatedList.completedAt ? new Date().toISOString() : updatedList.completedAt
+    };
+
+    setShoppingLists(prev => prev.map(sl => sl.id === finalList.id ? finalList : sl));
+  };
+
   const deleteShoppingList = (listId: string) => {
     if (!currentUser) return;
     setShoppingLists(prev => prev.filter(sl => sl.id !== listId));
-  }
-  const getShoppingListById = (listId: string) => shoppingLists.find(sl => sl.id === listId);
+  };
 
-  return <ShoppingListsContext.Provider value={{ shoppingLists, addShoppingList, updateShoppingList, deleteShoppingList, getShoppingListById }}>{children}</ShoppingListsContext.Provider>;
+  const archiveShoppingList = (listId: string) => {
+    if (!currentUser) return;
+    
+    const listToArchive = shoppingLists.find(sl => sl.id === listId);
+    if (listToArchive && listToArchive.status === ShoppingListStatus.COMPLETED) {
+      const archivedList = {
+        ...listToArchive,
+        status: ShoppingListStatus.ARCHIVED,
+        archivedAt: new Date().toISOString()
+      };
+      
+      setArchivedShoppingLists(prev => [archivedList, ...prev]);
+      setShoppingLists(prev => prev.filter(sl => sl.id !== listId));
+    }
+  };
+
+  const unarchiveShoppingList = (listId: string) => {
+    if (!currentUser) return;
+    
+    const archivedList = archivedShoppingLists.find(sl => sl.id === listId);
+    if (archivedList) {
+      const restoredList = {
+        ...archivedList,
+        status: ShoppingListStatus.COMPLETED,
+        archivedAt: undefined
+      };
+      
+      setShoppingLists(prev => [restoredList, ...prev]);
+      setArchivedShoppingLists(prev => prev.filter(sl => sl.id !== listId));
+    }
+  };
+
+  const deleteArchivedShoppingList = (listId: string) => {
+    if (!currentUser) return;
+    setArchivedShoppingLists(prev => prev.filter(sl => sl.id !== listId));
+  };
+
+  const bulkDeleteShoppingLists = (listIds: string[]) => {
+    if (!currentUser) return;
+    setShoppingLists(prev => prev.filter(sl => !listIds.includes(sl.id)));
+  };
+
+  const bulkArchiveShoppingLists = (listIds: string[]) => {
+    if (!currentUser) return;
+    
+    const listsToArchive = shoppingLists.filter(sl => 
+      listIds.includes(sl.id) && sl.status === ShoppingListStatus.COMPLETED
+    );
+    
+    const archivedLists = listsToArchive.map(list => ({
+      ...list,
+      status: ShoppingListStatus.ARCHIVED,
+      archivedAt: new Date().toISOString()
+    }));
+    
+    setArchivedShoppingLists(prev => [...archivedLists, ...prev]);
+    setShoppingLists(prev => prev.filter(sl => !listIds.includes(sl.id)));
+  };
+
+  const bulkDeleteArchivedShoppingLists = (listIds: string[]) => {
+    if (!currentUser) return;
+    setArchivedShoppingLists(prev => prev.filter(sl => !listIds.includes(sl.id)));
+  };
+
+  const getShoppingListById = (listId: string) => {
+    return shoppingLists.find(sl => sl.id === listId) || archivedShoppingLists.find(sl => sl.id === listId);
+  };
+
+  return (
+    <ShoppingListsContext.Provider 
+      value={{ 
+        shoppingLists: shoppingLists.filter(sl => sl.status !== ShoppingListStatus.ARCHIVED), 
+        archivedShoppingLists,
+        addShoppingList, 
+        updateShoppingList, 
+        deleteShoppingList,
+        archiveShoppingList,
+        unarchiveShoppingList,
+        deleteArchivedShoppingList,
+        bulkDeleteShoppingLists,
+        bulkArchiveShoppingLists,
+        bulkDeleteArchivedShoppingLists,
+        getShoppingListById 
+      }}
+    >
+      {children}
+    </ShoppingListsContext.Provider>
+  );
 };
 
 const AppStateProvider: React.FC<{children: ReactNode}> = ({ children }) => {
@@ -1675,7 +1833,8 @@ const RecipesPage: React.FC = () => {
 // Recipe Detail Page
 const RecipeDetailPage: React.FC = () => {
   const { getRecipeById } = useRecipes();
-  const { validateRecipePreparation, deductIngredientsForPreparation } = useInventory();
+  const { validateRecipePreparation, deductIngredientsForPreparation, inventory, getInventoryItemByName } = useInventory();
+  const { addShoppingList } = useShoppingLists();
   const { setActiveView, viewParams } = useAppState();
   const [showPrepareModal, setShowPrepareModal] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
@@ -1688,6 +1847,18 @@ const RecipeDetailPage: React.FC = () => {
   const [scaledIngredients, setScaledIngredients] = useState<ScaledIngredient[]>([]);
 
   const recipe = getRecipeById(viewParams.id || '');
+
+  // Add inventory analysis for current serving size
+  const inventoryAnalysis = useMemo(() => {
+    if (!recipe) return null;
+    return analyzeRecipeInventory(recipe, inventory, currentServings);
+  }, [recipe, inventory, currentServings]);
+
+  // Check if we can prepare the current serving size
+  const canPrepareCurrentServings = useMemo(() => {
+    if (!recipe || !inventoryAnalysis) return false;
+    return currentServings <= inventoryAnalysis.maxPossibleServings;
+  }, [recipe, inventoryAnalysis, currentServings]);
 
   useEffect(() => {
     if (recipe) {
@@ -1709,6 +1880,101 @@ const RecipeDetailPage: React.FC = () => {
 
   const handleServingsChange = (newServings: number) => {
     setCurrentServings(newServings);
+  };
+
+  // Direct shopping list creation for current serving size
+  const handleAddToShoppingList = () => {
+    if (!recipe) return;
+
+    const servingsMultiplier = currentServings / recipe.defaultServings;
+    const neededIngredients: Record<string, { totalQuantity: number; unit: Unit; defaultStoreId?: string }> = {};
+
+    recipe.ingredients.forEach(ing => {
+      // Skip optional ingredients by default
+      if (ing.isOptional) return;
+
+      const normalizedName = normalizeIngredientName(ing.ingredientName);
+      const scaledQuantity = ing.quantity * servingsMultiplier;
+      
+      const inventoryItemForDefaultStore = getInventoryItemByName(normalizedName);
+
+      if (!neededIngredients[normalizedName]) {
+        neededIngredients[normalizedName] = { 
+          totalQuantity: 0, 
+          unit: ing.unit, 
+          defaultStoreId: inventoryItemForDefaultStore?.defaultStoreId 
+        };
+      }
+      
+      const existingEntry = neededIngredients[normalizedName];
+      const convertedScaledQuantity = convertUnit(scaledQuantity, ing.unit, existingEntry.unit);
+
+      if (convertedScaledQuantity !== null) {
+        existingEntry.totalQuantity += convertedScaledQuantity;
+      } else { 
+        if (existingEntry.totalQuantity === 0) { 
+           existingEntry.unit = ing.unit;
+           existingEntry.totalQuantity = scaledQuantity;
+        }
+      }
+      
+      if (!existingEntry.defaultStoreId && inventoryItemForDefaultStore?.defaultStoreId) {
+        existingEntry.defaultStoreId = inventoryItemForDefaultStore.defaultStoreId;
+      }
+    });
+    
+    const shoppingListItems: ShoppingListItem[] = [];
+    Object.entries(neededIngredients).forEach(([name, data]) => {
+      const inventoryItem = getInventoryItemByName(name);
+      let quantityToBuy = data.totalQuantity;
+
+      if (inventoryItem) {
+        const inventoryQuantityInNeededUnit = convertUnit(inventoryItem.quantity, inventoryItem.unit, data.unit);
+        if (inventoryQuantityInNeededUnit !== null) {
+          quantityToBuy -= inventoryQuantityInNeededUnit;
+        }
+      }
+      
+      if (quantityToBuy > 0.01) { 
+        shoppingListItems.push({
+          id: generateId(),
+          ingredientName: name,
+          neededQuantity: parseFloat(quantityToBuy.toFixed(2)), 
+          unit: data.unit,
+          recipeSources: [{ recipeName: recipe.name, quantity: data.totalQuantity }],
+          purchased: false,
+          storeId: data.defaultStoreId,
+        });
+      }
+    });
+    
+    if (shoppingListItems.length === 0) {
+      setAlertMessage({
+        type: 'success', 
+        message: `You have all ingredients for "${recipe.name}" (${currentServings} serving${currentServings !== 1 ? 's' : ''})! No shopping needed.`
+      });
+      setTimeout(() => setAlertMessage(null), 5000);
+      return;
+    }
+    
+    // Create new shopping list
+    const listName = `Shopping List - ${recipe.name} (${currentServings} serving${currentServings !== 1 ? 's' : ''}) - ${new Date().toLocaleDateString()}`;
+    const newListId = addShoppingList({
+      name: listName,
+      items: shoppingListItems
+    });
+    
+    // Show success notification
+    setAlertMessage({
+      type: 'success', 
+      message: `Shopping list "${listName}" created with ${shoppingListItems.length} items!`
+    });
+    setTimeout(() => setAlertMessage(null), 3000);
+    
+    // Navigate to the new shopping list
+    setTimeout(() => {
+      setActiveView('shopping_list_detail', { id: newListId });
+    }, 1000);
   };
 
   if (!recipe) {
@@ -1794,6 +2060,62 @@ const RecipeDetailPage: React.FC = () => {
               {prepTime && <span className="mr-4">Prep: {prepTime}</span>}
               {cookTime && <span className="mr-4">Cook: {cookTime}</span>}
             </div>
+
+            {/* Inventory status indicator */}
+            {inventoryAnalysis && (
+              <div className="mb-4">
+                {inventoryAnalysis.maxPossibleServings === 0 ? (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <div className="flex items-center">
+                      <svg className="w-5 h-5 text-red-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833-.23 2.5 1.732 2.5z" />
+                      </svg>
+                      <span className="text-sm text-red-700 font-medium">Missing ingredients</span>
+                    </div>
+                    <p className="text-sm text-red-600 mt-1">
+                      You don't have the required ingredients to make this recipe.
+                    </p>
+                  </div>
+                ) : inventoryAnalysis.maxPossibleServings === Infinity ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center">
+                      <svg className="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm text-green-700 font-medium">
+                        Can make unlimited servings
+                      </span>
+                    </div>
+                  </div>
+                ) : !canPrepareCurrentServings ? (
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                    <div className="flex items-center">
+                      <svg className="w-5 h-5 text-orange-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833-.23 2.5 1.732 2.5z" />
+                      </svg>
+                      <span className="text-sm text-orange-700 font-medium">
+                        Not enough ingredients for {currentServings} serving{currentServings !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <p className="text-sm text-orange-600 mt-1">
+                      You can make up to {inventoryAnalysis.maxPossibleServings} serving{inventoryAnalysis.maxPossibleServings !== 1 ? 's' : ''} with your current inventory.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <div className="flex items-center">
+                      <svg className="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-sm text-green-700 font-medium">
+                        Ready to cook {currentServings} serving{currentServings !== 1 ? 's' : ''}!
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {tags && tags.length > 0 && (
                 <div className="mb-4">
                     {tags.map(tag => (
@@ -1831,21 +2153,25 @@ const RecipeDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
-         <div className="p-6 md:p-8 border-t border-gray-200 flex justify-end space-x-3">
-            <Button 
-              variant="success" 
-              onClick={() => { setPrepareServings(currentServings); setShowPrepareModal(true); }}
-              leftIcon={<SparklesIcon />}
-            >
-              Prepare this Recipe
-            </Button>
-            <Button 
-              variant="primary" 
-              onClick={() => setActiveView('generate_shopping_list', { recipeIds: recipe.id })}
-              leftIcon={<ShoppingCartIcon />}
-            >
-              Add to Shopping List
-            </Button>
+         <div className="p-6 md:p-8 border-t border-gray-200">
+            <div className="flex justify-end space-x-3">
+              <Button 
+                variant="success" 
+                onClick={() => { setPrepareServings(currentServings); setShowPrepareModal(true); }}
+                leftIcon={<SparklesIcon />}
+                disabled={!canPrepareCurrentServings}
+                title={!canPrepareCurrentServings ? `Not enough ingredients for ${currentServings} serving${currentServings !== 1 ? 's' : ''}` : undefined}
+              >
+                Prepare this Recipe
+              </Button>
+              <Button 
+                variant="primary" 
+                onClick={handleAddToShoppingList}
+                leftIcon={<ShoppingCartIcon />}
+              >
+                Add to Shopping List
+              </Button>
+            </div>
           </div>
       </Card>
       <Modal isOpen={showPrepareModal} onClose={() => setShowPrepareModal(false)} title={`Prepare ${recipe.name}`}>
@@ -2269,296 +2595,366 @@ const ShoppingListGeneratorPage: React.FC = () => {
 
 // Shopping Lists Page
 const ShoppingListsPage: React.FC = () => {
-  const { shoppingLists, deleteShoppingList } = useShoppingLists();
+  const { shoppingLists, archivedShoppingLists, deleteShoppingList, archiveShoppingList, unarchiveShoppingList, deleteArchivedShoppingList, bulkDeleteShoppingLists, bulkArchiveShoppingLists, bulkDeleteArchivedShoppingLists } = useShoppingLists();
   const { setActiveView, searchTerm } = useAppState();
+  
+  type ShoppingListTab = 'active' | 'completed' | 'archived';
+  const [activeTab, setActiveTab] = useState<ShoppingListTab>('active');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedListIds, setSelectedListIds] = useState<string[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
 
-  const filteredLists = shoppingLists.filter(list =>
-    list.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    list.items.some(item => item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase()))
+  // Filter lists based on status and search term
+  const activeLists = shoppingLists.filter(list => 
+    list.status === ShoppingListStatus.ACTIVE &&
+    (list.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     list.items.some(item => item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase())))
   ).sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  const completedLists = shoppingLists.filter(list => 
+    list.status === ShoppingListStatus.COMPLETED &&
+    (list.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     list.items.some(item => item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase())))
+  ).sort((a,b) => new Date(b.completedAt || b.createdAt).getTime() - new Date(a.completedAt || a.createdAt).getTime());
+
+  const archivedListsFiltered = archivedShoppingLists.filter(list =>
+    list.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    list.items.some(item => item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase()))
+  ).sort((a,b) => new Date(b.archivedAt || b.createdAt).getTime() - new Date(a.archivedAt || a.createdAt).getTime());
+
+  const getCurrentLists = () => {
+    switch (activeTab) {
+      case 'active': return activeLists;
+      case 'completed': return completedLists;
+      case 'archived': return archivedListsFiltered;
+      default: return activeLists;
+    }
+  };
+
+  const handleListSelection = (listId: string) => {
+    setSelectedListIds(prev => 
+      prev.includes(listId) 
+        ? prev.filter(id => id !== listId)
+        : [...prev, listId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    const currentLists = getCurrentLists();
+    setSelectedListIds(currentLists.map(list => list.id));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedListIds([]);
+  };
+
+  const handleBulkArchive = () => {
+    bulkArchiveShoppingLists(selectedListIds);
+    setSelectedListIds([]);
+    setSelectionMode(false);
+    setShowArchiveConfirm(false);
+  };
+
+  const handleBulkDelete = () => {
+    if (activeTab === 'archived') {
+      bulkDeleteArchivedShoppingLists(selectedListIds);
+    } else {
+      bulkDeleteShoppingLists(selectedListIds);
+    }
+    setSelectedListIds([]);
+    setSelectionMode(false);
+    setShowDeleteConfirm(false);
+  };
+
+  const getStatusBadge = (list: ShoppingList) => {
+    switch (list.status) {
+      case ShoppingListStatus.ACTIVE:
+        return <span className="inline-block px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">Active</span>;
+      case ShoppingListStatus.COMPLETED:
+        return <span className="inline-block px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">Completed</span>;
+      case ShoppingListStatus.ARCHIVED:
+        return <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">Archived</span>;
+      default:
+        return null;
+    }
+  };
+
+  const renderShoppingListCard = (list: ShoppingList) => {
+    const isSelected = selectedListIds.includes(list.id);
+    const purchasedCount = list.items.filter(item => item.purchased).length;
+    const progressPercentage = list.items.length > 0 ? (purchasedCount / list.items.length) * 100 : 0;
+
+    return (
+      <Card 
+        key={list.id} 
+        onClick={() => selectionMode ? handleListSelection(list.id) : setActiveView('shopping_list_detail', {id: list.id})} 
+        className={`hover:bg-gray-50 cursor-pointer transition-colors ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}
+      >
+        <div className="flex items-center justify-between">
+          {selectionMode && (
+            <div className="mr-4">
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => handleListSelection(list.id)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+            </div>
+          )}
+          
+          <div className="flex-grow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-blue-600">{list.name}</h3>
+              {getStatusBadge(list)}
+            </div>
+            
+            <div className="space-y-1 text-sm text-gray-500">
+              <p>Created: {new Date(list.createdAt).toLocaleDateString()}</p>
+              {list.completedAt && <p>Completed: {new Date(list.completedAt).toLocaleDateString()}</p>}
+              {list.archivedAt && <p>Archived: {new Date(list.archivedAt).toLocaleDateString()}</p>}
+              <p>{list.items.length} items ({purchasedCount} purchased)</p>
+            </div>
+
+            {/* Progress bar */}
+            {list.items.length > 0 && (
+              <div className="mt-2">
+                <div className="flex justify-between text-xs text-gray-600 mb-1">
+                  <span>Progress</span>
+                  <span>{Math.round(progressPercentage)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${progressPercentage}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!selectionMode && (
+            <div className="flex space-x-2 ml-4">
+              {activeTab === 'completed' && (
+                <Button 
+                  variant="secondary" 
+                  size="sm" 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    archiveShoppingList(list.id); 
+                  }}
+                  title="Archive this list"
+                >
+                  <ArchiveBoxIcon className="w-4 h-4" />
+                </Button>
+              )}
+              
+              {activeTab === 'archived' && (
+                <Button 
+                  variant="secondary" 
+                  size="sm" 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    unarchiveShoppingList(list.id); 
+                  }}
+                  title="Restore from archive"
+                >
+                  <ArrowPathIcon className="w-4 h-4" />
+                </Button>
+              )}
+
+              <Button 
+                variant="danger" 
+                size="sm" 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (activeTab === 'archived') {
+                    deleteArchivedShoppingList(list.id);
+                  } else {
+                    deleteShoppingList(list.id);
+                  }
+                }}
+                title="Delete this list"
+              >
+                <TrashIcon className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
+  const currentLists = getCurrentLists();
+  const hasLists = activeLists.length > 0 || completedLists.length > 0 || archivedListsFiltered.length > 0;
 
   return (
     <div className="container mx-auto p-4">
-       {filteredLists.length === 0 && searchTerm === '' ? (
+      {/* Bulk Actions Bar */}
+      {selectionMode && (
+        <div className="sticky top-0 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <span className="text-blue-700 font-medium">
+              {selectedListIds.length} list{selectedListIds.length !== 1 ? 's' : ''} selected
+            </span>
+            <Button variant="ghost" size="sm" onClick={handleSelectAll}>
+              Select All
+            </Button>
+            <Button variant="ghost" size="sm" onClick={handleDeselectAll}>
+              Deselect All
+            </Button>
+          </div>
+          <div className="flex space-x-2">
+            {activeTab === 'completed' && selectedListIds.length > 0 && (
+              <Button variant="secondary" onClick={() => setShowArchiveConfirm(true)}>
+                Archive Selected
+              </Button>
+            )}
+            <Button variant="danger" onClick={() => setShowDeleteConfirm(true)}>
+              Delete Selected
+            </Button>
+            <Button variant="ghost" onClick={() => { setSelectionMode(false); setSelectedListIds([]); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-semibold text-gray-800">Shopping Lists</h1>
+        <div className="flex space-x-2">
+          {hasLists && (
+            <Button 
+              variant="ghost" 
+              onClick={() => setSelectionMode(!selectionMode)}
+              leftIcon={selectionMode ? <XMarkIcon className="w-4 h-4" /> : <PencilIcon className="w-4 h-4" />}
+            >
+              {selectionMode ? 'Cancel' : 'Select'}
+            </Button>
+          )}
+          <Button 
+            onClick={() => setActiveView('generate_shopping_list')} 
+            leftIcon={<PlusIcon/>}
+          >
+            New List
+          </Button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'active'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Active ({activeLists.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('completed')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'completed'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Completed ({completedLists.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('archived')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'archived'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Archived ({archivedListsFiltered.length})
+          </button>
+        </nav>
+      </div>
+
+      {/* Lists Content */}
+      {currentLists.length === 0 && searchTerm === '' ? (
         <EmptyState 
           icon={<ShoppingCartIcon />}
-          title="No Shopping Lists Yet"
-          message="Create a shopping list from your recipes or add items manually."
-          actionButton={<Button onClick={() => setActiveView('generate_shopping_list')} leftIcon={<PlusIcon/>}>Generate New List</Button>}
+          title={`No ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} Shopping Lists`}
+          message={
+            activeTab === 'active' 
+              ? "Create a shopping list from your recipes or add items manually."
+              : activeTab === 'completed'
+              ? "Complete some shopping lists to see them here."
+              : "Archive completed lists to see them here."
+          }
+          actionButton={
+            activeTab === 'active' ? (
+              <Button onClick={() => setActiveView('generate_shopping_list')} leftIcon={<PlusIcon/>}>
+                Generate New List
+              </Button>
+            ) : undefined
+          }
         />
-      ) : filteredLists.length === 0 && searchTerm !== '' ? (
+      ) : currentLists.length === 0 && searchTerm !== '' ? (
         <EmptyState 
-            icon={<MagnifyingGlassIcon />}
-            title="No Shopping Lists Found"
-            message={`Your search for "${searchTerm}" did not match any shopping lists.`}
+          icon={<MagnifyingGlassIcon />}
+          title="No Shopping Lists Found"
+          message={`Your search for "${searchTerm}" did not match any ${activeTab} shopping lists.`}
         />
       ) : (
         <div className="space-y-4">
-          {filteredLists.map(list => (
-            <Card key={list.id} onClick={() => setActiveView('shopping_list_detail', {id: list.id})} className="hover:bg-gray-50">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold text-blue-600">{list.name}</h3>
-                  <p className="text-sm text-gray-500">Created: {new Date(list.createdAt).toLocaleDateString()}</p>
-                  <p className="text-sm text-gray-500">{list.items.length} items ({list.items.filter(i => i.purchased).length} purchased)</p>
-                </div>
-                <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); deleteShoppingList(list.id); }}><TrashIcon/></Button>
-              </div>
-            </Card>
-          ))}
+          {currentLists.map(renderShoppingListCard)}
         </div>
       )}
-      <AddItemButton onClick={() => setActiveView('generate_shopping_list')} text="New Shopping List" />
-    </div>
-  );
-};
 
-// Shopping List Detail Page
-const ShoppingListDetailPage: React.FC = () => {
-  const { getShoppingListById, updateShoppingList } = useShoppingLists();
-  const { inventory, addInventoryItem: addInvItemSystem } = useInventory(); // Renamed to avoid conflict
-  const { stores, getStoreById } = useStores();
-  const { setActiveView, viewParams } = useAppState();
-  const listId = viewParams.id || '';
-  const shoppingList = getShoppingListById(listId);
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
-
-  if (!shoppingList) { 
-    return (
-      <div className="container mx-auto p-4 text-center">
-        <EmptyState
-            icon={<ShoppingCartIcon />}
-            title="Shopping List Not Found"
-            message="The shopping list you are looking for does not exist or may have been removed."
-            actionButton={<Button onClick={() => setActiveView('shopping_lists')} variant="primary">Back to Shopping Lists</Button>}
-        />
-      </div>
-    );
-  }
-
-  const shoppingListItemNames = shoppingList.items.map(item => normalizeIngredientName(item.ingredientName));
-
-  const suggestedLowStockItems = inventory.filter(invItem => 
-    invItem.lowStockThreshold && invItem.quantity < invItem.lowStockThreshold &&
-    !shoppingListItemNames.includes(normalizeIngredientName(invItem.ingredientName))
-  );
-
-  const suggestedExpiringItems = inventory.filter(invItem =>
-    isItemExpiringSoon(invItem.expirationDate) && !isItemExpired(invItem.expirationDate) &&
-    !shoppingListItemNames.includes(normalizeIngredientName(invItem.ingredientName))
-  );
-
-
-  const handleAddSuggestedItem = (invItem: InventoryItem, type: 'low-stock' | 'expiring') => {
-    if (!shoppingList) return;
-
-    let quantityToAdd = 1;
-    if (type === 'low-stock' && invItem.lowStockThreshold) {
-      quantityToAdd = Math.max(1, invItem.lowStockThreshold - invItem.quantity);
-    }
-
-    const newShoppingListItem: ShoppingListItem = {
-      id: generateId(),
-      ingredientName: invItem.ingredientName,
-      neededQuantity: quantityToAdd,
-      unit: invItem.unit,
-      recipeSources: [], // No recipe source for suggested items
-      purchased: false,
-      storeId: invItem.defaultStoreId,
-    };
-
-    const updatedItems = [...shoppingList.items, newShoppingListItem];
-    updateShoppingList({ ...shoppingList, items: updatedItems });
-    setAlertMessage(`${invItem.ingredientName} added to the shopping list.`);
-    setTimeout(() => setAlertMessage(null), 3000);
-  };
-
-
-  const toggleItemPurchased = (itemId: string, currentlyPurchased: boolean) => {
-    let itemAddedToInventory = false;
-    const updatedItems = shoppingList.items.map(item => {
-      if (item.id === itemId) {
-        const newPurchasedState = !currentlyPurchased;
-        if (newPurchasedState) { 
-          addInvItemSystem({ 
-            ingredientName: item.ingredientName, 
-            quantity: item.neededQuantity, 
-            unit: item.unit,
-            // For items purchased from SL, we don't know exp date/freq/store unless it was pre-filled
-            // This info is best updated in inventory directly.
-            // defaultStoreId: item.storeId 
-          }, true); 
-          itemAddedToInventory = true;
-        }
-        return { ...item, purchased: newPurchasedState };
-      }
-      return item;
-    });
-    updateShoppingList({ ...shoppingList, items: updatedItems });
-    if(itemAddedToInventory) {
-        const changedItem = shoppingList.items.find(i => i.id === itemId);
-        setAlertMessage(`${changedItem?.ingredientName} marked as purchased and added to inventory.`);
-        setTimeout(() => setAlertMessage(null), 3000);
-    }
-  };
-  
-  const handleStoreChange = (itemId: string, storeId: string) => {
-    const updatedItems = shoppingList.items.map(item =>
-      item.id === itemId ? { ...item, storeId: storeId === "NONE" ? undefined : storeId } : item
-    );
-    updateShoppingList({ ...shoppingList, items: updatedItems });
-  };
-
-  const addAllPurchasedToInventory = () => {
-    let itemsAddedCount = 0;
-    const updatedItems = shoppingList.items.map(item => {
-      if (!item.purchased) {
-         addInvItemSystem({
-            ingredientName: item.ingredientName,
-            quantity: item.neededQuantity,
-            unit: item.unit
-         }, true);
-         itemsAddedCount++;
-         return {...item, purchased: true};
-      }
-      return item;
-    });
-    updateShoppingList({ ...shoppingList, items: updatedItems });
-    setAlertMessage(`${itemsAddedCount} item(s) marked as purchased and added to inventory! Redirecting to recipes...`);
-    
-    // Navigate to recipes page after brief delay to show updated inventory status
-    setTimeout(() => {
-      setActiveView('recipes');
-    }, 2000);
-  };
-  
-  const itemsByStore: Record<string, ShoppingListItem[]> = shoppingList.items.reduce((acc, item) => {
-    const storeKey = item.storeId || 'unassigned';
-    if (!acc[storeKey]) acc[storeKey] = [];
-    acc[storeKey].push(item);
-    return acc;
-  }, {} as Record<string, ShoppingListItem[]>);
-
-  const storeOptions = [{value: "NONE", label: "No Specific Store"}, ...stores.map(s => ({ value: s.id, label: s.name }))];
-
-  const renderSuggestedItem = (item: InventoryItem, type: 'low-stock' | 'expiring') => (
-    <li key={`suggest-${item.id}`} className="p-3 bg-gray-50 rounded-md shadow-sm flex justify-between items-center">
-      <div>
-        <span className="font-medium text-gray-700">{item.ingredientName}</span>
-        <span className="text-sm text-gray-500 ml-2">({item.quantity.toFixed(1)} {item.unit} in stock)</span>
-        {type === 'expiring' && item.expirationDate && <span className="text-xs text-yellow-600 ml-2">Expires: {new Date(item.expirationDate).toLocaleDateString()}</span>}
-        {type === 'low-stock' && item.lowStockThreshold && <span className="text-xs text-red-600 ml-2">Low! (Threshold: {item.lowStockThreshold})</span>}
-      </div>
-      <Button size="sm" variant="secondary" onClick={() => handleAddSuggestedItem(item, type)} leftIcon={<PlusIcon className="w-4 h-4"/>}>
-        Add to List
-      </Button>
-    </li>
-  );
-
-  return (
-    <div className="container mx-auto p-4">
-      <Button onClick={() => setActiveView('shopping_lists')} variant="ghost" leftIcon={<ArrowLeftIcon />} className="mb-6">Back to Shopping Lists</Button>
-      {alertMessage && <Alert type="success" message={alertMessage} onClose={() => setAlertMessage(null)} />}
-      <h2 className="text-3xl font-bold text-gray-800 mb-2">{shoppingList.name}</h2>
-      <p className="text-sm text-gray-500 mb-6">Created: {new Date(shoppingList.createdAt).toLocaleDateString()}</p>
-      
-      
-      {Object.entries(itemsByStore).map(([storeId, items]) => {
-        const store = getStoreById(storeId);
-        const storeName = store ? store.name : "Unassigned Items";
-        return (
-          <div key={storeId} className="mb-8">
-            <h3 className="text-xl font-semibold text-gray-700 mb-3 border-b pb-2">{storeName}</h3>
-            <ul className="space-y-3">
-            {items.map(item => (
-              <li key={item.id} className={`p-4 rounded-lg shadow flex items-center justify-between ${item.purchased ? 'bg-green-50 opacity-70' : 'bg-white'}`}>
-                <div className="flex items-center flex-grow">
-                  <CheckboxField
-                    id={`item-${item.id}`}
-                    checked={item.purchased}
-                    onChange={() => toggleItemPurchased(item.id, item.purchased)}
-                    label={
-                      <div>
-                        <span className={`font-medium ${item.purchased ? 'line-through text-gray-500' : 'text-gray-800'}`}>
-                          {item.ingredientName}
-                        </span>
-                        <span className={`ml-2 text-sm ${item.purchased ? 'text-gray-400' : 'text-gray-600'}`}>
-                          ({item.neededQuantity} {item.unit})
-                        </span>
-                        {item.recipeSources.length > 0 && (
-                          <p className="text-xs text-gray-500">
-                            For: {item.recipeSources.map(rs => `${rs.recipeName} (${rs.quantity.toFixed(1)}${item.unit})`).join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    }
-                    containerClassName="w-full"
-                  />
-                </div>
-                <div className="w-48 ml-4 flex-shrink-0">
-                    <SelectField 
-                        label=""
-                        options={storeOptions}
-                        value={item.storeId || "NONE"}
-                        onChange={(e) => handleStoreChange(item.id, e.target.value)}
-                        className="text-xs p-1.5"
-                        aria-label={`Store for ${item.ingredientName}`}
-                    />
-                </div>
-              </li>
-            ))}
-          </ul>
+      {/* Confirmation Modals */}
+      <Modal 
+        isOpen={showDeleteConfirm} 
+        onClose={() => setShowDeleteConfirm(false)} 
+        title="Confirm Deletion"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Are you sure you want to delete {selectedListIds.length} shopping list{selectedListIds.length !== 1 ? 's' : ''}? 
+            This action cannot be undone.
+          </p>
+          <div className="flex justify-end space-x-3">
+            <Button variant="ghost" onClick={() => setShowDeleteConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleBulkDelete}>
+              Delete {selectedListIds.length} List{selectedListIds.length !== 1 ? 's' : ''}
+            </Button>
           </div>
-        );
-      })}
-      
-      {shoppingList.items.length === 0 && (
-        <EmptyState
-            icon={<ShoppingCartIcon/>}
-            title="This Shopping List is Empty"
-            message="No items in this list. You can generate items from recipes or add them manually."
-        />
-      )}
-
-      {shoppingList.items.some(item => !item.purchased) && (
-        <div className="mt-8 text-right">
-          <Button onClick={addAllPurchasedToInventory} variant="primary" size="lg">
-            Mark All Unpurchased & Add to Inventory
-          </Button>
         </div>
-      )}
+      </Modal>
 
-      {/* Suggested Add-Ons Section */}
-      {(suggestedLowStockItems.length > 0 || suggestedExpiringItems.length > 0) && (
-        <div className="mt-12 p-6 bg-gray-50 rounded-lg shadow">
-          <h3 className="text-2xl font-semibold text-gray-700 mb-6 flex items-center">
-            <SparklesIcon className="w-6 h-6 mr-2 text-blue-500" /> Suggested Add-Ons
-          </h3>
-          
-          {suggestedLowStockItems.length > 0 && (
-            <div className="mb-6">
-              <h4 className="text-lg font-semibold text-red-600 mb-3">Low on Stock</h4>
-              <ul className="space-y-2">
-                {suggestedLowStockItems.map(item => renderSuggestedItem(item, 'low-stock'))}
-              </ul>
-            </div>
-          )}
-
-          {suggestedExpiringItems.length > 0 && (
-            <div>
-              <h4 className="text-lg font-semibold text-yellow-600 mb-3">Expiring Soon</h4>
-              <ul className="space-y-2">
-                {suggestedExpiringItems.map(item => renderSuggestedItem(item, 'expiring'))}
-              </ul>
-            </div>
-          )}
+      <Modal 
+        isOpen={showArchiveConfirm} 
+        onClose={() => setShowArchiveConfirm(false)} 
+        title="Confirm Archive"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Are you sure you want to archive {selectedListIds.length} completed shopping list{selectedListIds.length !== 1 ? 's' : ''}? 
+            You can restore them later from the archived section.
+          </p>
+          <div className="flex justify-end space-x-3">
+            <Button variant="ghost" onClick={() => setShowArchiveConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="secondary" onClick={handleBulkArchive}>
+              Archive {selectedListIds.length} List{selectedListIds.length !== 1 ? 's' : ''}
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };
-
 
 // Stores Page & Form
 const StoresPage: React.FC = () => { 
