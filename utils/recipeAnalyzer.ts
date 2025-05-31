@@ -1,4 +1,4 @@
-import { Recipe, InventoryItem, RecipeInventoryAnalysis, MissingIngredient, InventoryMatch, RecipeIngredient, Unit } from '../types';
+import { Recipe, InventoryItem, RecipeInventoryAnalysis, MissingIngredient, InventoryMatch } from '../types';
 import { convertUnit } from '../constants';
 import { normalizeIngredientName } from '../constants';
 

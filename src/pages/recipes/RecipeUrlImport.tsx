@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
-import { scrapeRecipeFromUrl, validateRecipeUrl } from '../services/recipeScrapingService';
-import { normalizeScrapedRecipe, validateNormalizedRecipe } from '../utils/recipeNormalizer';
-import type { ScrapedRecipeData, Recipe } from '../types';
+import { scrapeRecipeFromUrl, validateRecipeUrl } from '../../../services/recipeScrapingService';
+import { normalizeScrapedRecipe, validateNormalizedRecipe } from '../../../utils/recipeNormalizer';
+import type { ScrapedRecipeData, Recipe } from '../../../types';
 
 // We'll need these icons - assuming they exist in the parent file or can be imported
-interface IconProps {
-  className?: string;
-}
 
 // These components should exist in the parent application
 declare const Button: React.FC<{
