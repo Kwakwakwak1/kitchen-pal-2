@@ -1832,12 +1832,13 @@ const RecipesPage: React.FC = () => {
 
 // Recipe Detail Page
 const RecipeDetailPage: React.FC = () => {
-  const { getRecipeById } = useRecipes();
+  const { getRecipeById, updateRecipe } = useRecipes();
   const { validateRecipePreparation, deductIngredientsForPreparation, inventory, getInventoryItemByName } = useInventory();
   const { addShoppingList } = useShoppingLists();
   const { setActiveView, viewParams } = useAppState();
   const [showPrepareModal, setShowPrepareModal] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [prepareServings, setPrepareServings] = useState(1);
   const [preparationValidation, setPreparationValidation] = useState<any>(null);
   const [alertMessage, setAlertMessage] = useState<{type: 'success' | 'error', message: string} | null>(null);
@@ -1977,20 +1978,8 @@ const RecipeDetailPage: React.FC = () => {
     }, 1000);
   };
 
-  if (!recipe) {
-    return ( 
-      <div className="container mx-auto p-4 text-center">
-        <EmptyState
-            icon={<BookOpenIcon />}
-            title="Recipe Not Found"
-            message="The recipe you are looking for does not exist or may have been removed."
-            actionButton={<Button onClick={() => setActiveView('recipes')} variant="primary">Back to Recipes</Button>}
-        />
-      </div> 
-    );
-  }
-
   const handlePrepareClick = () => {
+    if (!recipe) return;
     const validation = validateRecipePreparation(recipe, prepareServings);
     setPreparationValidation(validation);
     
@@ -2008,6 +1997,7 @@ const RecipeDetailPage: React.FC = () => {
   };
 
   const handleConfirmPreparation = () => {
+    if (!recipe) return;
     const result = deductIngredientsForPreparation(recipe, prepareServings);
     
     // Always close the modal first to ensure UI responsiveness
@@ -2034,6 +2024,29 @@ const RecipeDetailPage: React.FC = () => {
     // Clear the alert message after 5 seconds
     setTimeout(() => setAlertMessage(null), 5000);
   };
+
+  const handleEditRecipe = (updatedRecipe: Recipe) => {
+    updateRecipe(updatedRecipe);
+    setShowEditModal(false);
+    setAlertMessage({
+      type: 'success',
+      message: 'Recipe updated successfully!'
+    });
+    setTimeout(() => setAlertMessage(null), 3000);
+  };
+
+  if (!recipe) {
+    return ( 
+      <div className="container mx-auto p-4 text-center">
+        <EmptyState
+            icon={<BookOpenIcon />}
+            title="Recipe Not Found"
+            message="The recipe you are looking for does not exist or may have been removed."
+            actionButton={<Button onClick={() => setActiveView('recipes')} variant="primary">Back to Recipes</Button>}
+        />
+      </div> 
+    );
+  }
 
   const { name, defaultServings, ingredients, instructions, sourceName, sourceUrl, prepTime, cookTime, tags, imageUrl } = recipe;
 
@@ -2156,6 +2169,13 @@ const RecipeDetailPage: React.FC = () => {
          <div className="p-6 md:p-8 border-t border-gray-200">
             <div className="flex justify-end space-x-3">
               <Button 
+                variant="ghost" 
+                onClick={() => setShowEditModal(true)}
+                leftIcon={<PencilIcon className="w-4 h-4" />}
+              >
+                Edit Recipe
+              </Button>
+              <Button 
                 variant="success" 
                 onClick={() => { setPrepareServings(currentServings); setShowPrepareModal(true); }}
                 leftIcon={<SparklesIcon />}
@@ -2221,6 +2241,17 @@ const RecipeDetailPage: React.FC = () => {
             <Button variant="primary" onClick={handleConfirmPreparation}>Confirm Preparation</Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Edit Recipe Modal */}
+      <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Recipe" size="2xl">
+        {recipe && (
+          <RecipeForm 
+            initialRecipe={recipe}
+            onSave={(recipeData) => handleEditRecipe(recipeData as Recipe)} 
+            onClose={() => setShowEditModal(false)} 
+          />
+        )}
       </Modal>
     </div>
   );
