@@ -1,6 +1,6 @@
-const express = require('express');
-const cors = require('cors');
-const fetch = require('node-fetch');
+import express from 'express';
+import cors from 'cors';
+import fetch from 'node-fetch';
 
 const app = express();
 const PORT = 3001;
@@ -57,4 +57,4 @@ app.listen(PORT, () => {
   console.log(`Usage: GET /recipe-proxy?url=<recipe-url>`);
 });
 
-module.exports = app; 
+export default app; 
