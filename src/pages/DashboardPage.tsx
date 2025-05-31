@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { useInventory } from '@/src/providers/InventoryProvider';
-import { useRecipes } from '@/src/providers/RecipesProvider';
-import { useShoppingLists } from '@/src/providers/ShoppingListsProvider';
-import { useAppState } from '@/src/providers/AppStateProvider';
-import { useAuth } from '@/src/providers/AuthProvider';
-import { Button, Card, Alert } from '@/src/components/ui';
-import { SmartShoppingListGenerator } from '@/src/components/shopping/SmartShoppingListGenerator';
+import { useInventory } from '../providers/InventoryProvider';
+import { useRecipes } from '../providers/RecipesProvider';
+import { useShoppingLists } from '../providers/ShoppingListsProvider';
+import { useAppState } from '../providers/AppStateProvider';
+import { useAuth } from '../providers/AuthProvider';
+import { Button, Card, Alert } from '../components/ui';
+import { SmartShoppingListGenerator } from '../components/shopping/SmartShoppingListGenerator';
 import { 
   CalendarIcon, 
   ArchiveBoxIcon, 
@@ -15,18 +15,16 @@ import {
   ExclamationTriangleIcon,
   CheckCircleIcon,
   ClockIcon,
-  ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
   PlusIcon,
   PlayIcon
 } from '@heroicons/react/24/outline';
 import { 
   isItemExpiringSoon, 
-  isItemExpired, 
-  generateId, 
+  isItemExpired,
   isDiscreteUnit
-} from '@/constants';
-import { InventoryItem, ShoppingListItem, FrequencyOfUse, Recipe } from '@/types';
+} from '../../constants';
+import { ShoppingListItem, FrequencyOfUse } from '../../types';
 
 export const DashboardPage: React.FC = () => {
   const { inventory } = useInventory();
@@ -124,25 +122,25 @@ export const DashboardPage: React.FC = () => {
   const handleQuickAction = (action: string, data?: any) => {
     switch (action) {
       case 'addRecipe':
-        setActiveView('recipeDetail', { mode: 'add' });
+        setActiveView('recipe_detail', { mode: 'add' });
         break;
       case 'addInventory':
         setActiveView('inventory');
         break;
       case 'createShoppingList':
-        setActiveView('shoppingListDetail', { mode: 'add' });
+        setActiveView('shopping_list_detail', { mode: 'add' });
         break;
       case 'viewRecipe':
-        setActiveView('recipeDetail', { id: data.id });
+        setActiveView('recipe_detail', { id: data.id });
         break;
       case 'cookRecipe':
-        setActiveView('recipeDetail', { id: data.id, mode: 'cooking' });
+        setActiveView('recipe_detail', { id: data.id, mode: 'cooking' });
         break;
       case 'viewInventory':
         setActiveView('inventory');
         break;
       case 'viewShoppingLists':
-        setActiveView('shoppingLists');
+        setActiveView('shopping_lists');
         break;
       default:
         break;
