@@ -1,14 +1,18 @@
 import React, { useState, useEffect, createContext, useContext, useCallback, ReactNode, FormEvent, ReactElement, ChangeEvent, FocusEvent, useMemo } from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { 
-  Recipe, RecipeIngredient, InventoryItem, Store, ShoppingList, ShoppingListItem, Unit, FrequencyOfUse, MeasurementSystem, User, UserPreferences,
-  RecipesContextType, InventoryContextType, StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView, ScrapedRecipeData, RecipeInventoryAnalysis, ShoppingListStatus
+  Recipe, RecipeIngredient, Store, ShoppingList, ShoppingListItem, Unit, FrequencyOfUse, MeasurementSystem, User, UserPreferences,
+  RecipesContextType,
+  // InventoryContextType, // Will be redefined for EnhancedInventoryItem
+  StoresContextType, ShoppingListsContextType, AppStateContextType, AuthContextType, ActiveView, ScrapedRecipeData, RecipeInventoryAnalysis, ShoppingListStatus,
+  EnhancedInventoryItem, ItemCategory, DEFAULT_CATEGORIES, ItemTemplate // Added new types
 } from './types';
 import { saveState, loadState } from './localStorageService';
 import { 
   generateId, UNITS_ARRAY, FREQUENCY_OF_USE_OPTIONS, normalizeIngredientName, convertUnit, isItemExpiringSoon, isItemExpired, APP_NAME,
   LOCAL_STORAGE_USERS_KEY, ACTIVE_USER_ID_KEY, isDiscreteUnit, formatQuantityForUnit
 } from './constants';
+import { runMigrationIfNeeded } from './src/utils/migration'; // Added migration utility
 import { 
   BookOpenIcon, ArchiveBoxIcon, ShoppingCartIcon, BuildingStorefrontIcon, PlusIcon, TrashIcon, PencilIcon,
   ArrowLeftIcon, MagnifyingGlassIcon, DEFAULT_RECIPE_IMAGE, DEFAULT_AVATAR_IMAGE,
@@ -39,10 +43,52 @@ import ProfilePage from './src/pages/auth/ProfilePage';
 // --- CONTEXTS ---
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const RecipesContext = createContext<RecipesContextType | undefined>(undefined);
-const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
+// const InventoryContext = createContext<InventoryContextType | undefined>(undefined); // Redefined below
 const StoresContext = createContext<StoresContextType | undefined>(undefined);
 const ShoppingListsContext = createContext<ShoppingListsContextType | undefined>(undefined);
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
+
+// New Categories Context
+export interface CategoriesContextType {
+  categories: ItemCategory[];
+  addCategory: (categoryData: Omit<ItemCategory, 'id' | 'createdAt' | 'updatedAt' | 'sortOrder' | 'isDefault'> & Partial<Pick<ItemCategory, 'sortOrder' | 'isDefault'>>) => string;
+  updateCategory: (category: ItemCategory) => void;
+  deleteCategory: (categoryId: string, reassignToCategoryId?: string) => void;
+  getCategoryById: (categoryId: string) => ItemCategory | undefined;
+  getDefaultCategoryId: () => string | undefined;
+  getCategoryByName: (name: string) => ItemCategory | undefined;
+  reorderCategories: (orderedIds: string[]) => void;
+  isLoadingCategories: boolean;
+}
+const CategoriesContext = createContext<CategoriesContextType | undefined>(undefined);
+
+
+// Updated Inventory Context Type
+export interface InventoryContextType {
+  inventory: EnhancedInventoryItem[];
+  addInventoryItem: (item: Omit<EnhancedInventoryItem, 'id' | 'addedDate' | 'lastUpdated' | 'isArchived' | 'archivedDate' | 'originalQuantity' | 'timesRestocked' | 'totalConsumed' | 'averageConsumptionRate' | 'lastUsedDate'>) => void;
+  updateInventoryItem: (item: EnhancedInventoryItem) => void;
+  deleteInventoryItem: (itemId: string) => void; // This will now archive
+  archiveItem: (itemId: string) => void;
+  unarchiveItem: (itemId: string, quantity?: number) => void;
+  createTemplateFromItem: (itemId: string) => ItemTemplate | undefined;
+  getInventoryItemByName: (name: string) => EnhancedInventoryItem | undefined;
+  getActiveItems: () => EnhancedInventoryItem[];
+  getArchivedItems: () => EnhancedInventoryItem[];
+  deductFromInventory: (ingredientName: string, quantity: number, unit: Unit) => boolean;
+  validateRecipePreparation: (recipe: Recipe, requestedServings: number) => {
+    canPrepare: boolean;
+    missingIngredients: Array<{ name: string; needed: number; available: number; unit: string }>;
+    warnings: string[];
+  };
+  deductIngredientsForPreparation: (recipe: Recipe, preparedServings: number) => {
+    success: boolean;
+    deductedIngredients: Array<{ name: string; amountDeducted: number; unit: string; remainingInInventory: number }>;
+    errors: string[];
+  };
+}
+const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
+
 
 // --- HOOKS for contexts ---
 export const useAuth = (): AuthContextType => {
@@ -55,9 +101,14 @@ export const useRecipes = (): RecipesContextType => {
   if (!context) throw new Error('useRecipes must be used within a RecipesProvider');
   return context;
 };
-export const useInventory = (): InventoryContextType => {
+export const useInventory = (): InventoryContextType => { // Now returns the new type
   const context = useContext(InventoryContext);
   if (!context) throw new Error('useInventory must be used within an InventoryProvider');
+  return context;
+};
+export const useCategories = (): CategoriesContextType => {
+  const context = useContext(CategoriesContext);
+  if (!context) throw new Error('useCategories must be used within a CategoriesProvider');
   return context;
 };
 export const useStores = (): StoresContextType => {
@@ -75,6 +126,7 @@ export const useAppState = (): AppStateContextType => {
   if (!context) throw new Error('useAppState must be used within an AppStateProvider');
   return context;
 }
+
 
 // --- PROVIDERS ---
 
@@ -183,17 +235,15 @@ const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 const RecipesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
   const userRecipesKey = currentUser ? `recipes_${currentUser.id}` : null;
-  const globalRecipesKey = 'recipes'; // Old global key
+  const globalRecipesKey = 'recipes';
 
   const [recipes, setRecipes] = useState<Recipe[]>(() => {
     if (currentUser && userRecipesKey) {
       const userSpecificData = loadState<Recipe[]>(userRecipesKey);
       if (userSpecificData) return userSpecificData;
-      // Try to load global data if user-specific doesn't exist (one-time migration attempt)
       const globalData = loadState<Recipe[]>(globalRecipesKey);
       if (globalData) {
-        saveState(userRecipesKey, globalData); // Save it under user-specific key
-        // Optionally, clear global data: localStorage.removeItem(globalRecipesKey);
+        saveState(userRecipesKey, globalData);
         return globalData;
       }
     }
@@ -215,13 +265,13 @@ const RecipesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
         }
       }
     } else if (!currentUser) {
-      setRecipes([]); // Clear data if logged out
+      setRecipes([]);
     }
   }, [currentUser, userRecipesKey]);
 
   useEffect(() => {
-    if (userRecipesKey && currentUser) { // Only save if there's a user and a key
-        saveState(userRecipesKey, recipes);
+    if (userRecipesKey && currentUser) {
+      saveState(userRecipesKey, recipes);
     }
   }, [recipes, userRecipesKey, currentUser]);
 
@@ -249,41 +299,26 @@ const RecipesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 
 const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
-  const userInventoryKey = currentUser ? `inventory_${currentUser.id}` : null;
-  const globalInventoryKey = 'inventory';
+  // const { getDefaultCategoryId } = useCategories(); // Available if needed for default category logic
+  const userInventoryKey = currentUser ? `enhanced_inventory_${currentUser.id}` : null; // UPDATED KEY
 
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
-     if (currentUser && userInventoryKey) {
-      const userSpecificData = loadState<InventoryItem[]>(userInventoryKey);
-      if (userSpecificData) return userSpecificData;
-      const globalData = loadState<InventoryItem[]>(globalInventoryKey);
-      if (globalData) {
-        saveState(userInventoryKey, globalData);
-        return globalData;
-      }
+  const [inventory, setInventory] = useState<EnhancedInventoryItem[]>(() => {
+    if (currentUser && userInventoryKey) {
+      const userSpecificData = loadState<EnhancedInventoryItem[]>(userInventoryKey);
+      // No global data migration here; migration_runner handles old 'inventory_*' key
+      return userSpecificData || [];
     }
     return [];
   });
 
   useEffect(() => {
     if (currentUser && userInventoryKey) {
-      const userSpecificData = loadState<InventoryItem[]>(userInventoryKey);
-      if (userSpecificData) {
-        setInventory(userSpecificData);
-      } else {
-        const globalData = loadState<InventoryItem[]>(globalInventoryKey);
-        if (globalData) {
-          setInventory(globalData);
-          saveState(userInventoryKey, globalData);
-        } else {
-          setInventory([]);
-        }
-      }
+      const userSpecificData = loadState<EnhancedInventoryItem[]>(userInventoryKey);
+      setInventory(userSpecificData || []);
     } else if (!currentUser) {
       setInventory([]);
     }
   }, [currentUser, userInventoryKey]);
-
 
   useEffect(() => {
     if (userInventoryKey && currentUser) {
@@ -291,273 +326,494 @@ const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     }
   }, [inventory, userInventoryKey, currentUser]);
 
-  const addInventoryItem = (itemData: Omit<InventoryItem, 'id'>, fromPurchase: boolean = false) => {
+  const archiveItem = useCallback((itemId: string, internalCall: boolean = false) => {
+    if (!currentUser) return;
+    const now = new Date().toISOString();
+    const updateFn = (prev: EnhancedInventoryItem[]) => prev.map(item => {
+      if (item.id === itemId && !item.isArchived) {
+        return {
+          ...item,
+          quantity: 0,
+          isArchived: true,
+          archivedDate: now,
+          originalQuantity: item.quantity > 0 ? item.quantity : item.originalQuantity || 0,
+          lastUpdated: now,
+        };
+      }
+      return item;
+    });
+     if (internalCall) {
+        setInventory(currentInventory => updateFn(currentInventory));
+    } else {
+        setInventory(updateFn);
+    }
+  }, [currentUser]);
+
+  const addInventoryItem = (itemData: Omit<EnhancedInventoryItem, 'id' | 'addedDate' | 'lastUpdated' | 'isArchived' | 'archivedDate' | 'originalQuantity' | 'timesRestocked' | 'totalConsumed' | 'averageConsumptionRate' | 'lastUsedDate'>) => {
     if (!currentUser) return;
     const normalizedName = normalizeIngredientName(itemData.ingredientName);
+    const now = new Date().toISOString();
+
     setInventory(prevInventory => {
-        const existingItemIndex = prevInventory.findIndex(i => normalizeIngredientName(i.ingredientName) === normalizedName && i.unit === itemData.unit);
-        if (existingItemIndex > -1) {
-            const newInventory = [...prevInventory];
-            const existingItem = newInventory[existingItemIndex];
-            newInventory[existingItemIndex] = {
-                ...existingItem,
-                quantity: existingItem.quantity + itemData.quantity,
-                ...(fromPurchase ? {} : { 
-                  expirationDate: itemData.expirationDate,
-                  frequencyOfUse: itemData.frequencyOfUse,
-                  lowStockThreshold: itemData.lowStockThreshold,
-                  defaultStoreId: itemData.defaultStoreId,
-                })
+      const existingItemIndex = prevInventory.findIndex(
+        invItem => normalizeIngredientName(invItem.ingredientName) === normalizedName && invItem.unit === itemData.unit
+      );
+
+      if (existingItemIndex >= 0) {
+        return prevInventory.map((invItem, index) => {
+          if (index === existingItemIndex) {
+            const updatedQty = invItem.quantity + itemData.quantity;
+            const itemToUpdate: EnhancedInventoryItem = {
+              ...invItem,
+              ...itemData,
+              quantity: updatedQty,
+              lastUpdated: now,
+              isArchived: false, // Unarchive if adding
+              archivedDate: undefined,
+              originalQuantity: undefined, // Clear original quantity from archive
+              timesRestocked: invItem.isArchived ? (invItem.timesRestocked || 0) + 1 : invItem.timesRestocked,
             };
-            return newInventory;
-        } else {
-            return [...prevInventory, { ...itemData, id: generateId(), ingredientName: normalizedName }];
+            if (updatedQty <= 0) { // Should not happen if itemData.quantity is positive
+                archiveItem(itemToUpdate.id, true); // Use internal call
+                // This needs to be careful about state updates, archiveItem will setInventory again.
+                // For simplicity, let's assume itemData.quantity is always positive when adding.
+                // If it can be zero/negative, this logic needs adjustment.
+            }
+            return itemToUpdate;
+          }
+          return invItem;
+        });
+      } else {
+        const newItem: EnhancedInventoryItem = {
+          id: generateId(),
+          ...itemData,
+          ingredientName: normalizedName,
+          addedDate: now,
+          lastUpdated: now,
+          isArchived: false,
+          archivedDate: undefined,
+          originalQuantity: undefined,
+          timesRestocked: 0,
+          totalConsumed: 0,
+          averageConsumptionRate: undefined,
+          lastUsedDate: undefined,
+        };
+        if (newItem.quantity <= 0) { // Handle cases where item is added with 0 or negative quantity
+          newItem.isArchived = true;
+          newItem.archivedDate = now;
+          newItem.originalQuantity = newItem.quantity;
+          newItem.quantity = 0;
         }
+        return [...prevInventory, newItem];
+      }
     });
   };
-  const updateInventoryItem = (updatedItem: InventoryItem) => {
+
+  const updateInventoryItem = (item: EnhancedInventoryItem) => {
     if (!currentUser) return;
-    const normalizedName = normalizeIngredientName(updatedItem.ingredientName);
-    setInventory(prev => prev.map(i => i.id === updatedItem.id ? {...updatedItem, ingredientName: normalizedName } : i));
+    const now = new Date().toISOString();
+    setInventory(prev => prev.map(invItem => {
+      if (invItem.id === item.id) {
+        const updatedItem = {
+          ...item,
+          ingredientName: normalizeIngredientName(item.ingredientName),
+          lastUpdated: now
+        };
+        if (updatedItem.quantity <= 0 && !updatedItem.isArchived) {
+          // Directly set archive fields or call archiveItem
+          return {
+            ...updatedItem,
+            quantity: 0,
+            isArchived: true,
+            archivedDate: now,
+            originalQuantity: invItem.quantity, // Store last positive quantity before this update
+          };
+        }
+        return updatedItem;
+      }
+      return invItem;
+    }));
   };
-  const deleteInventoryItem = (itemId: string) => {
+
+  const unarchiveItem = (itemId: string, quantity?: number) => {
     if (!currentUser) return;
-    setInventory(prev => prev.filter(i => i.id !== itemId));
-  }
-  const getInventoryItemByName = (name: string) => inventory.find(i => normalizeIngredientName(i.ingredientName) === normalizeIngredientName(name));
+    const now = new Date().toISOString();
+    setInventory(prev => prev.map(item => {
+      if (item.id === itemId && item.isArchived) {
+        return {
+          ...item,
+          isArchived: false,
+          archivedDate: undefined,
+          quantity: quantity !== undefined && quantity > 0 ? quantity : item.originalQuantity || 1,
+          originalQuantity: undefined,
+          timesRestocked: (item.timesRestocked || 0) + 1,
+          lastUpdated: now,
+        };
+      }
+      return item;
+    }));
+  };
+
+  const deleteInventoryItem = (itemId: string) => { // Now archives
+    if (!currentUser) return;
+    archiveItem(itemId);
+  };
+
+  const createTemplateFromItem = (itemId: string): ItemTemplate | undefined => {
+    if (!currentUser) return undefined;
+    const item = inventory.find(invItem => invItem.id === itemId);
+    if (!item) return undefined;
+
+    return {
+      id: generateId(),
+      ingredientName: item.ingredientName,
+      unit: item.unit,
+      categoryId: item.categoryId,
+      defaultStoreId: item.defaultStoreId,
+      brand: item.brand,
+      notes: item.notes,
+      averageQuantity: item.isArchived && item.quantity === 0
+                       ? (item.originalQuantity || 1)
+                       : (item.quantity > 0 ? item.quantity : 1),
+      typicalLowStockThreshold: item.lowStockThreshold,
+      frequencyOfUse: item.frequencyOfUse,
+      timesUsed: 0,
+      lastUsedDate: new Date().toISOString(),
+      createdFrom: item.isArchived ? 'archive' : 'manual',
+      sourceItemId: item.id,
+    };
+  };
+
+  const getInventoryItemByName = (name: string) => {
+    const normalizedNameSearch = normalizeIngredientName(name);
+    return inventory.find(i => normalizeIngredientName(i.ingredientName) === normalizedNameSearch && !i.isArchived) ||
+           inventory.find(i => normalizeIngredientName(i.ingredientName) === normalizedNameSearch && i.isArchived);
+  };
+
+  const getActiveItems = () => inventory.filter(item => !item.isArchived);
+  const getArchivedItems = () => inventory.filter(item => item.isArchived);
 
   const deductFromInventory = (ingredientName: string, quantity: number, unit: Unit): boolean => {
     if (!currentUser) return false;
     const normalizedName = normalizeIngredientName(ingredientName);
     
     // Find the inventory item first to validate the deduction
-    const inventoryItem = inventory.find(item => 
+    const normalizedName = normalizeIngredientName(ingredientName);
+    const activeInventory = getActiveItems(); // Use active items for deduction
+    const itemIndex = activeInventory.findIndex(item =>
       normalizeIngredientName(item.ingredientName) === normalizedName
     );
-    
-    if (!inventoryItem) {
-      console.log(`Deduction failed: Item "${ingredientName}" not found in inventory`);
+
+    if (itemIndex === -1) {
+      console.log(`Deduction failed: Item "${ingredientName}" not found in active inventory`);
+      return false;
+    }
+
+    const item = activeInventory[itemIndex];
+    let deductableQuantity = quantity;
+
+    if (item.unit !== unit) {
+      const converted = convertUnit(quantity, unit, item.unit);
+      if (converted === null) {
+        console.log(`Deduction failed: Cannot convert ${quantity} ${unit} to ${item.unit} for ${ingredientName}`);
+        return false;
+      }
+      deductableQuantity = converted;
+    }
+
+    if (item.quantity < deductableQuantity) {
+      console.log(`Deduction failed: Insufficient ${ingredientName}. Have ${item.quantity} ${item.unit}, need ${deductableQuantity} ${item.unit}`);
       return false;
     }
     
-    // Convert the quantity to the inventory item's unit
-    const convertedQuantityToDeduct = convertUnit(quantity, unit, inventoryItem.unit);
-    if (convertedQuantityToDeduct === null) {
-      console.log(`Deduction failed: Cannot convert ${quantity} ${unit} to ${inventoryItem.unit} for ${ingredientName}`);
-      return false;
-    }
-    
-    // Check if we have enough quantity
-    if (inventoryItem.quantity < convertedQuantityToDeduct) {
-      console.log(`Deduction failed: Insufficient ${ingredientName}. Have ${inventoryItem.quantity} ${inventoryItem.unit}, need ${convertedQuantityToDeduct} ${inventoryItem.unit}`);
-      return false;
-    }
-    
-    // If we reach here, the deduction is valid and will succeed
-    console.log(`Deduction will succeed for ${ingredientName}: ${convertedQuantityToDeduct} ${inventoryItem.unit}`);
-    
-    // Perform the deduction by creating NEW objects (no direct mutation)
-    setInventory(prevInventory => 
-      prevInventory.map(item => {
-        if (normalizeIngredientName(item.ingredientName) === normalizedName) {
-          const newQuantity = Math.max(0, item.quantity - convertedQuantityToDeduct);
-          
-          // Apply proper rounding based on unit type
-          const formattedQuantity = formatQuantityForUnit(newQuantity, item.unit);
-          
-          console.log(`Deducted ${convertedQuantityToDeduct} ${item.unit} of ${ingredientName}. Remaining: ${formattedQuantity} ${item.unit}`);
-          
-          // Return NEW object instead of mutating existing one
-          return {
-            ...item,
-            quantity: formattedQuantity
+    const now = new Date().toISOString();
+    setInventory(prev => prev.map(invItem => {
+      if (invItem.id === item.id) {
+        const newQuantity = Math.max(0, invItem.quantity - deductableQuantity);
+        const updatedInvItem: EnhancedInventoryItem = {
+          ...invItem,
+          quantity: formatQuantityForUnit(newQuantity, invItem.unit),
+          lastUpdated: now,
+          totalConsumed: (invItem.totalConsumed || 0) + deductableQuantity,
+          lastUsedDate: now,
+        };
+        if (updatedInvItem.quantity <= 0) {
+          return { // Archive it
+            ...updatedInvItem,
+            isArchived: true,
+            archivedDate: now,
+            originalQuantity: invItem.quantity, // Store quantity before this deduction
           };
         }
-        return item;
-      }).filter(item => {
-        // Remove items that reach exactly 0 quantity for continuous units
-        // Keep discrete units (pieces) even at 0 for easier re-adding
-        if (item.quantity === 0) {
-          return isDiscreteUnit(item.unit);
-        }
-        return item.quantity > 0;
-      })
-    );
-    
-    // Return true since we've validated the deduction and performed it
+        return updatedInvItem;
+      }
+      return invItem;
+    }));
     return true;
   };
 
-  // Enhanced function for recipe preparation with validation
-  const validateRecipePreparation = (
-    recipe: Recipe, 
-    requestedServings: number
-  ): {
-    canPrepare: boolean;
-    missingIngredients: Array<{
-      name: string;
-      needed: number;
-      available: number;
-      unit: string;
-    }>;
-    warnings: string[];
-  } => {
+  const validateRecipePreparation = (recipe: Recipe, requestedServings: number) => {
     const requiredIngredients = recipe.ingredients.filter(ing => !ing.isOptional);
     const missingIngredients: Array<{name: string; needed: number; available: number; unit: string}> = [];
     const warnings: string[] = [];
-    
-    console.log(`Validating recipe preparation for ${recipe.name} - ${requestedServings} servings`);
+    const activeInventory = getActiveItems(); // Use active items for validation
     
     for (const ingredient of requiredIngredients) {
       const normalizedName = normalizeIngredientName(ingredient.ingredientName);
-      const inventoryItem = inventory.find(item => 
+      const inventoryItem = activeInventory.find(item =>
         normalizeIngredientName(item.ingredientName) === normalizedName
       );
-      
       const neededQuantity = (ingredient.quantity / recipe.defaultServings) * requestedServings;
       
-      console.log(`Checking ${ingredient.ingredientName}: need ${neededQuantity} ${ingredient.unit}`);
-      
       if (!inventoryItem) {
-        console.log(`  - Item not found in inventory`);
-        missingIngredients.push({
-          name: ingredient.ingredientName,
-          needed: neededQuantity,
-          available: 0,
-          unit: ingredient.unit
-        });
+        missingIngredients.push({ name: ingredient.ingredientName, needed: neededQuantity, available: 0, unit: ingredient.unit });
         continue;
       }
-      
-      // Convert inventory quantity to recipe unit for comparison
-      const convertedAvailable = convertUnit(
-        inventoryItem.quantity,
-        inventoryItem.unit,
-        ingredient.unit
-      );
-      
+      const convertedAvailable = convertUnit(inventoryItem.quantity, inventoryItem.unit, ingredient.unit);
       if (convertedAvailable === null) {
-        console.log(`  - Cannot convert ${inventoryItem.unit} to ${ingredient.unit}`);
         warnings.push(`Cannot convert ${inventoryItem.unit} to ${ingredient.unit} for ${ingredient.ingredientName}`);
-        missingIngredients.push({
-          name: ingredient.ingredientName,
-          needed: neededQuantity,
-          available: 0,
-          unit: ingredient.unit
-        });
+        missingIngredients.push({ name: ingredient.ingredientName, needed: neededQuantity, available: 0, unit: ingredient.unit });
         continue;
       }
-      
-      console.log(`  - Available: ${convertedAvailable} ${ingredient.unit} (${inventoryItem.quantity} ${inventoryItem.unit})`);
-      
       if (convertedAvailable < neededQuantity) {
-        console.log(`  - Insufficient quantity`);
-        missingIngredients.push({
-          name: ingredient.ingredientName,
-          needed: neededQuantity,
-          available: convertedAvailable,
-          unit: ingredient.unit
-        });
-      } else {
-        console.log(`  - Sufficient quantity available`);
+        missingIngredients.push({ name: ingredient.ingredientName, needed: neededQuantity, available: convertedAvailable, unit: ingredient.unit });
       }
     }
-    
-    const canPrepare = missingIngredients.length === 0;
-    console.log(`Validation result: ${canPrepare ? 'Can prepare' : 'Cannot prepare'} - ${missingIngredients.length} missing ingredients`);
-    
-    return {
-      canPrepare,
-      missingIngredients,
-      warnings
-    };
+    return { canPrepare: missingIngredients.length === 0, missingIngredients, warnings };
   };
 
-  // Enhanced deduction function with detailed results and improved error handling
-  const deductIngredientsForPreparation = (
-    recipe: Recipe,
-    preparedServings: number
-  ): {
-    success: boolean;
-    deductedIngredients: Array<{
-      name: string;
-      amountDeducted: number;
-      unit: string;
-      remainingInInventory: number;
-    }>;
-    errors: string[];
-  } => {
-    console.log(`Starting ingredient deduction for ${recipe.name} - ${preparedServings} servings`);
-    
-    const deductedIngredients: Array<{
-      name: string;
-      amountDeducted: number;
-      unit: string;
-      remainingInInventory: number;
-    }> = [];
+  const deductIngredientsForPreparation = (recipe: Recipe, preparedServings: number) => {
+    const deductedIngredients: Array<{ name: string; amountDeducted: number; unit: string; remainingInInventory: number; }> = [];
     const errors: string[] = [];
-    
-    // Use the same validation logic as the validation function
     const validation = validateRecipePreparation(recipe, preparedServings);
+
     if (!validation.canPrepare) {
-      console.log(`Cannot proceed with deduction - validation failed`);
-      return {
-        success: false,
-        deductedIngredients: [],
-        errors: validation.missingIngredients.map(ing => {
-          if (ing.available === 0) {
-            return `${ing.name} not found in inventory`;
-          } else {
-            return `Insufficient ${ing.name}: need ${ing.needed.toFixed(2)} ${ing.unit}, have ${ing.available.toFixed(2)} ${ing.unit}`;
-          }
-        })
-      };
+      return { success: false, deductedIngredients: [], errors: validation.missingIngredients.map(ing => `Insufficient ${ing.name}`) };
     }
-    
-    // Perform the deductions using the same logic as validation
+
     const requiredIngredients = recipe.ingredients.filter(ing => !ing.isOptional);
-    
+    const now = new Date().toISOString();
+
     for (const ingredient of requiredIngredients) {
-      const neededQuantity = (ingredient.quantity / recipe.defaultServings) * preparedServings;
+      const neededQuantityForRecipeUnit = (ingredient.quantity / recipe.defaultServings) * preparedServings;
+      const normalizedName = normalizeIngredientName(ingredient.ingredientName);
       
-      console.log(`Deducting ${neededQuantity} ${ingredient.unit} of ${ingredient.ingredientName}`);
-      
-      
-      const success = deductFromInventory(ingredient.ingredientName, neededQuantity, ingredient.unit);
-      
-      if (success) {
-        // Get remaining quantity after deduction
-        const inventoryItemAfter = getInventoryItemByName(ingredient.ingredientName);
-        const convertedRemaining = inventoryItemAfter ? 
-          convertUnit(inventoryItemAfter.quantity, inventoryItemAfter.unit, ingredient.unit) || 0 : 0;
-        
-        deductedIngredients.push({
-          name: ingredient.ingredientName,
-          amountDeducted: neededQuantity,
-          unit: ingredient.unit,
-          remainingInInventory: convertedRemaining
-        });
-        
-        console.log(`  - Successfully deducted. Remaining: ${convertedRemaining} ${ingredient.unit}`);
-      } else {
-        const errorMsg = `Failed to deduct ${ingredient.ingredientName}`;
-        console.log(`  - ${errorMsg}`);
-        errors.push(errorMsg);
+      const itemIndexInMainInventory = inventory.findIndex(item =>
+        normalizeIngredientName(item.ingredientName) === normalizedName && !item.isArchived
+      );
+
+      if (itemIndexInMainInventory === -1) { // Should not happen if validation passed
+        errors.push(`Ingredient not found in active inventory: ${ingredient.ingredientName}`);
+        continue;
       }
+      
+      const itemToDeduct = inventory[itemIndexInMainInventory];
+      let deductableQuantityInItemUnit = neededQuantityForRecipeUnit;
+
+      if (itemToDeduct.unit !== ingredient.unit) {
+        const converted = convertUnit(neededQuantityForRecipeUnit, ingredient.unit, itemToDeduct.unit);
+        if (converted === null) {
+          errors.push(`Cannot convert units for ${ingredient.ingredientName} to perform deduction.`);
+          continue;
+        }
+        deductableQuantityInItemUnit = converted;
+      }
+      
+      // This check should have been covered by validateRecipePreparation
+      if (itemToDeduct.quantity < deductableQuantityInItemUnit) {
+        errors.push(`Insufficient quantity for ${ingredient.ingredientName} (should have been caught by validation).`);
+        continue;
+      }
+
+      const newQuantity = Math.max(0, itemToDeduct.quantity - deductableQuantityInItemUnit);
+
+      setInventory(prev => prev.map((invItem, index) => {
+        if (index === itemIndexInMainInventory) {
+          const updatedItem: EnhancedInventoryItem = {
+            ...invItem,
+            quantity: formatQuantityForUnit(newQuantity, invItem.unit),
+            lastUpdated: now,
+            totalConsumed: (invItem.totalConsumed || 0) + deductableQuantityInItemUnit,
+            lastUsedDate: now,
+          };
+          if (updatedItem.quantity <= 0) {
+            return { // Archive it
+              ...updatedItem,
+              isArchived: true,
+              archivedDate: now,
+              originalQuantity: invItem.quantity,
+            };
+          }
+          return updatedItem;
+        }
+        return invItem;
+      }));
+      
+      // After state update, find the item again to report remaining quantity
+      const itemAfterDeduction = inventory.find(i => i.id === itemToDeduct.id);
+      const remainingInRecipeUnit = itemAfterDeduction ? convertUnit(itemAfterDeduction.quantity, itemAfterDeduction.unit, ingredient.unit) : 0;
+
+      deductedIngredients.push({
+        name: ingredient.ingredientName,
+        amountDeducted: neededQuantityForRecipeUnit,
+        unit: ingredient.unit,
+        remainingInInventory: remainingInRecipeUnit || 0,
+      });
     }
-    
-    const success = errors.length === 0;
-    console.log(`Deduction complete: ${success ? 'SUCCESS' : 'FAILED'} - ${deductedIngredients.length} ingredients deducted, ${errors.length} errors`);
-    
-    return {
-      success,
-      deductedIngredients,
-      errors
-    };
+    return { success: errors.length === 0, deductedIngredients, errors };
   };
-  
-  return <InventoryContext.Provider value={{ inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, getInventoryItemByName, deductFromInventory, validateRecipePreparation, deductIngredientsForPreparation }}>{children}</InventoryContext.Provider>;
+
+  return (
+    <InventoryContext.Provider
+      value={{
+        inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem,
+        archiveItem, unarchiveItem, createTemplateFromItem,
+        getInventoryItemByName, getActiveItems, getArchivedItems,
+        deductFromInventory, validateRecipePreparation, deductIngredientsForPreparation
+      }}
+    >
+      {children}
+    </InventoryContext.Provider>
+  );
 };
+
+
+// CATEGORIES PROVIDER (New Inline Provider)
+const CategoriesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { currentUser } = useAuth();
+  const [categories, setCategories] = useState<ItemCategory[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState<boolean>(true);
+  const storageKey = currentUser ? `categories_${currentUser.id}` : null;
+
+  useEffect(() => {
+    if (currentUser && storageKey) {
+      setIsLoadingCategories(true);
+      try {
+        const storedCategories = loadState<ItemCategory[]>(storageKey);
+        if (storedCategories && storedCategories.length > 0) {
+          setCategories(storedCategories.sort((a,b) => a.sortOrder - b.sortOrder));
+        } else {
+          const initialCategories: ItemCategory[] = DEFAULT_CATEGORIES.map((cat, index) => ({
+            ...cat,
+            id: generateId(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            sortOrder: cat.sortOrder !== undefined ? cat.sortOrder : index + 1,
+            isDefault: cat.isDefault !== undefined ? cat.isDefault : false,
+          })).sort((a,b) => a.sortOrder - b.sortOrder);
+          setCategories(initialCategories);
+          saveState(storageKey, initialCategories);
+        }
+      } catch (error) {
+        console.error("Failed to load categories, initializing defaults:", error);
+        const initialCategories: ItemCategory[] = DEFAULT_CATEGORIES.map((cat, index) => ({
+            ...cat,
+            id: generateId(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            sortOrder: cat.sortOrder !== undefined ? cat.sortOrder : index + 1,
+            isDefault: cat.isDefault !== undefined ? cat.isDefault : false,
+          })).sort((a,b) => a.sortOrder - b.sortOrder);
+        setCategories(initialCategories);
+        if (storageKey) saveState(storageKey, initialCategories);
+      } finally {
+        setIsLoadingCategories(false);
+      }
+    } else if (!currentUser) {
+      setCategories([]); // Clear categories if logged out
+      setIsLoadingCategories(false);
+    }
+  }, [currentUser, storageKey]);
+
+  useEffect(() => {
+    if (storageKey && currentUser && !isLoadingCategories) {
+      saveState(storageKey, categories);
+    }
+  }, [categories, storageKey, currentUser, isLoadingCategories]);
+
+  const addCategory = (categoryData: Omit<ItemCategory, 'id' | 'createdAt' | 'updatedAt' | 'sortOrder' | 'isDefault'> & Partial<Pick<ItemCategory, 'sortOrder' | 'isDefault'>>): string => {
+    if (!currentUser) return '';
+    const now = new Date().toISOString();
+    const maxSortOrder = categories.reduce((max, cat) => Math.max(max, cat.sortOrder), 0);
+    const newCategory: ItemCategory = {
+      id: generateId(),
+      name: categoryData.name,
+      description: categoryData.description,
+      color: categoryData.color,
+      icon: categoryData.icon,
+      createdAt: now,
+      updatedAt: now,
+      sortOrder: categoryData.sortOrder !== undefined ? categoryData.sortOrder : maxSortOrder + 1,
+      isDefault: categoryData.isDefault !== undefined ? categoryData.isDefault : false,
+    };
+    setCategories(prev => [...prev, newCategory].sort((a,b) => a.sortOrder - b.sortOrder));
+    return newCategory.id;
+  };
+
+  const updateCategory = (updatedCategory: ItemCategory) => {
+    if (!currentUser) return;
+    setCategories(prev =>
+      prev.map(cat =>
+        cat.id === updatedCategory.id
+          ? { ...updatedCategory, updatedAt: new Date().toISOString() }
+          : cat
+      ).sort((a,b) => a.sortOrder - b.sortOrder)
+    );
+  };
+
+  const deleteCategory = (categoryId: string, reassignToCategoryId?: string) => {
+    if (!currentUser) return;
+    // Basic deletion. Reassignment of items in InventoryProvider would be needed.
+    const categoryToDelete = categories.find(cat => cat.id === categoryId);
+    if (!categoryToDelete) return;
+
+    if (categoryToDelete.name.toLowerCase() === 'uncategorized') {
+        alert("Cannot delete the 'Uncategorized' category.");
+        return;
+    }
+    if (categoryToDelete.isDefault) {
+        const defaultCategories = categories.filter(cat => cat.isDefault);
+        if (defaultCategories.length <= 1) {
+            alert("Cannot delete the last default category.");
+            return;
+        }
+    }
+    setCategories(prev => prev.filter(cat => cat.id !== categoryId));
+    // TODO: Trigger item reassignment in InventoryContext if reassignToCategoryId is provided.
+  };
+
+  const getCategoryById = (categoryId: string) => categories.find(cat => cat.id === categoryId);
+  const getCategoryByName = (name: string) => categories.find(cat => cat.name.toLowerCase() === name.toLowerCase());
+  
+  const getDefaultCategoryId = (): string | undefined => {
+    const defaultCat = categories.find(cat => cat.isDefault === true);
+    if (defaultCat) return defaultCat.id;
+    const uncategorized = categories.find(cat => cat.name.toLowerCase() === 'uncategorized');
+    return uncategorized?.id;
+  };
+
+  const reorderCategories = (orderedIds: string[]) => {
+    if (!currentUser) return;
+    const reordered = orderedIds.map((id, index) => {
+      const category = categories.find(cat => cat.id === id);
+      if (category) return { ...category, sortOrder: index + 1 };
+      return null;
+    }).filter(Boolean) as ItemCategory[];
+
+    const remaining = categories.filter(cat => !orderedIds.includes(cat.id))
+      .sort((a,b) => a.sortOrder - b.sortOrder) // keep original relative order
+      .map((cat, index) => ({ ...cat, sortOrder: reordered.length + index + 1 }));
+
+    setCategories([...reordered, ...remaining]);
+  };
+
+  return (
+    <CategoriesContext.Provider value={{ categories, addCategory, updateCategory, deleteCategory, getCategoryById, getDefaultCategoryId, getCategoryByName, reorderCategories, isLoadingCategories }}>
+      {children}
+    </CategoriesContext.Provider>
+  );
+};
+
 
 const StoresProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
@@ -838,7 +1094,7 @@ const ShoppingListsProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 const AppStateProvider: React.FC<{children: ReactNode}> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, isLoadingAuth } = useAuth(); // Use useAuth here
+  const { currentUser } = useAuth();
   
   const getActiveViewFromPath = (pathname: string): ActiveView => {
     const pathSegments = pathname.split('/').filter(Boolean);
@@ -2134,60 +2390,100 @@ const RecipeDetailPage: React.FC = () => {
 
 // Inventory Page
 const InventoryPage: React.FC = () => {
-  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useInventory();
+  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, getActiveItems, getArchivedItems } = useInventory(); // Using new inventory hook
   const { searchTerm } = useAppState(); 
   const [showModal, setShowModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<InventoryItem | undefined>(undefined);
+  const [editingItem, setEditingItem] = useState<EnhancedInventoryItem | undefined>(undefined);
+  const [activeInventoryTab, setActiveInventoryTab] = useState<'active' | 'archived'>('active');
 
-  const handleSave = (itemData: Omit<InventoryItem, 'id'> | InventoryItem) => {
-    if ('id' in itemData) {
-      updateInventoryItem(itemData);
-    } else {
-      addInventoryItem(itemData, false); 
+
+  const handleSave = (itemData: Omit<EnhancedInventoryItem, 'id' | 'addedDate' | 'lastUpdated' | 'isArchived' | 'archivedDate' | 'originalQuantity' | 'timesRestocked' | 'totalConsumed' | 'averageConsumptionRate' | 'lastUsedDate'> | EnhancedInventoryItem) => {
+    if ('id' in itemData) { // This implies it's an EnhancedInventoryItem
+      updateInventoryItem(itemData as EnhancedInventoryItem);
+    } else { // This is Omit<...>
+      addInventoryItem(itemData);
     }
     setShowModal(false);
     setEditingItem(undefined);
   };
 
-  const openEditModal = (item: InventoryItem) => {
+  const openEditModal = (item: EnhancedInventoryItem) => {
     setEditingItem(item);
     setShowModal(true);
   };
 
-  const filteredInventory = inventory.filter(item =>
-    item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase())
+  const currentInventoryList = activeInventoryTab === 'active' ? getActiveItems() : getArchivedItems();
+
+  const filteredInventory = currentInventoryList.filter(item =>
+    item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (item.brand && item.brand.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (item.notes && item.notes.toLowerCase().includes(searchTerm.toLowerCase()))
   ).sort((a,b) => {
-      if (a.expirationDate && b.expirationDate) return new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime();
-      if (a.expirationDate) return -1;
-      if (b.expirationDate) return 1;
+      if (activeInventoryTab === 'active') {
+        if (a.expirationDate && b.expirationDate) return new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime();
+        if (a.expirationDate) return -1;
+        if (b.expirationDate) return 1;
+      } else { // For archived, sort by archivedDate descending
+        if (a.archivedDate && b.archivedDate) return new Date(b.archivedDate).getTime() - new Date(a.archivedDate).getTime();
+        if (b.archivedDate) return -1;
+        if (a.archivedDate) return 1;
+      }
       return a.ingredientName.localeCompare(b.ingredientName);
   });
 
   return (
     <div className="container mx-auto p-4">
+      {/* Tabs for Active/Archived */}
+      <div className="mb-4 border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+          <button
+            onClick={() => setActiveInventoryTab('active')}
+            className={`${
+              activeInventoryTab === 'active'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm`}
+          >
+            Active ({getActiveItems().length})
+          </button>
+          <button
+            onClick={() => setActiveInventoryTab('archived')}
+            className={`${
+              activeInventoryTab === 'archived'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm`}
+          >
+            Archived ({getArchivedItems().length})
+          </button>
+        </nav>
+      </div>
+
        {filteredInventory.length === 0 && searchTerm === '' ? (
         <EmptyState 
           icon={<ArchiveBoxIcon />}
-          title="No Inventory Items Yet"
-          message="Add items to your inventory manually or when purchasing from a shopping list."
-          actionButton={<Button onClick={() => { setEditingItem(undefined); setShowModal(true); }} leftIcon={<PlusIcon/>}>Add New Item</Button>}
+          title={activeInventoryTab === 'active' ? "No Active Items Yet" : "No Archived Items"}
+          message={activeInventoryTab === 'active' ? "Add items to your inventory. Items with zero quantity will be archived." : "Archived items (zero quantity) will appear here."}
+          actionButton={activeInventoryTab === 'active' ? <Button onClick={() => { setEditingItem(undefined); setShowModal(true); }} leftIcon={<PlusIcon/>}>Add New Item</Button> : undefined}
         />
       ) : filteredInventory.length === 0 && searchTerm !== '' ? (
          <EmptyState 
           icon={<MagnifyingGlassIcon />}
           title="No Items Found"
-          message={`Your search for "${searchTerm}" did not match any inventory items.`}
+          message={`Your search for "${searchTerm}" did not match any ${activeInventoryTab} inventory items.`}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredInventory.map(item => {
-            const expiringSoon = isItemExpiringSoon(item.expirationDate);
-            const expired = isItemExpired(item.expirationDate);
-            const lowStock = item.lowStockThreshold && item.quantity < item.lowStockThreshold;
+            const expiringSoon = !item.isArchived && isItemExpiringSoon(item.expirationDate);
+            const expired = !item.isArchived && isItemExpired(item.expirationDate);
+            const lowStock = !item.isArchived && item.lowStockThreshold && item.quantity < item.lowStockThreshold;
             let cardBorder = '';
             if (expired) cardBorder = 'border-2 border-red-700 bg-red-50';
             else if (expiringSoon) cardBorder = 'border-2 border-yellow-500 bg-yellow-50';
             else if (lowStock) cardBorder = 'border-2 border-red-500';
+            else if (item.isArchived) cardBorder = 'opacity-70 bg-gray-100';
+
 
             return (
             <Card key={item.id} className={`relative ${cardBorder}`}>
@@ -2199,62 +2495,107 @@ const InventoryPage: React.FC = () => {
                       ? `${Math.round(item.quantity)} ${item.unit}`
                       : `${item.quantity.toFixed(2)} ${item.unit}`
                     }
+                    {item.isArchived && item.originalQuantity && ` (Archived, was ${item.originalQuantity} ${item.unit})`}
                   </p>
-                  {item.expirationDate && <p className={`text-xs ${expired || expiringSoon ? 'font-semibold' : ''} ${expired ? 'text-red-700' : expiringSoon ? 'text-yellow-700' : 'text-gray-500'}`}>Exp: {new Date(item.expirationDate).toLocaleDateString()} {expired && "(Expired!)"}{!expired && expiringSoon && "(Expiring Soon!)"}</p>}
-                  {lowStock && !expired && !expiringSoon && <span className="text-xs text-red-600 font-semibold">Low Stock!</span>}
+                  {!item.isArchived && item.expirationDate && <p className={`text-xs ${expired || expiringSoon ? 'font-semibold' : ''} ${expired ? 'text-red-700' : expiringSoon ? 'text-yellow-700' : 'text-gray-500'}`}>Exp: {new Date(item.expirationDate).toLocaleDateString()} {expired && "(Expired!)"}{!expired && expiringSoon && "(Expiring Soon!)"}</p>}
+                  {!item.isArchived && lowStock && !expired && !expiringSoon && <span className="text-xs text-red-600 font-semibold">Low Stock!</span>}
                   {item.frequencyOfUse && <p className="text-xs text-gray-500">Use: {item.frequencyOfUse}</p>}
+                  {item.brand && <p className="text-xs text-gray-500">Brand: {item.brand}</p>}
+                  {item.notes && <p className="text-xs text-gray-500 truncate" title={item.notes}>Notes: {item.notes}</p>}
+                   {item.archivedDate && <p className="text-xs text-gray-500">Archived: {new Date(item.archivedDate).toLocaleDateString()}</p>}
                 </div>
                 <div className="flex flex-col space-y-1">
                   <Button variant="ghost" size="sm" onClick={() => openEditModal(item)} className="p-1.5"><PencilIcon className="w-4 h-4"/></Button>
-                  <Button variant="danger" size="sm" onClick={() => deleteInventoryItem(item.id)} className="p-1.5"><TrashIcon className="w-4 h-4"/></Button>
+                  {/* Delete button behavior might change based on tab, or be consistent (archive) */}
+                  <Button variant="danger" size="sm" onClick={() => deleteInventoryItem(item.id)} className="p-1.5" title={item.isArchived ? "Permanently delete (future feature)" : "Archive Item (sets quantity to 0)"}><TrashIcon className="w-4 h-4"/></Button>
                 </div>
               </div>
             </Card>
           );})}
         </div>
       )}
-      <AddItemButton onClick={() => { setEditingItem(undefined); setShowModal(true); }} text="Add Inventory Item" />
+      {activeInventoryTab === 'active' && <AddItemButton onClick={() => { setEditingItem(undefined); setShowModal(true); }} text="Add Inventory Item" />}
       <Modal isOpen={showModal} onClose={() => { setShowModal(false); setEditingItem(undefined); }} title={editingItem ? "Edit Inventory Item" : "Add Inventory Item"} size="lg">
+        {/* The form needs to be updated to handle EnhancedInventoryItem fields */}
         <InventoryItemForm initialItem={editingItem} onSave={handleSave} onClose={() => { setShowModal(false); setEditingItem(undefined); }} />
       </Modal>
     </div>
   );
 };
 
-// Inventory Item Form
+// Inventory Item Form - Needs to be updated for EnhancedInventoryItem
 interface InventoryItemFormProps {
-  initialItem?: InventoryItem;
-  onSave: (itemData: Omit<InventoryItem, 'id'> | InventoryItem) => void;
+  initialItem?: EnhancedInventoryItem; // Changed to EnhancedInventoryItem
+  onSave: (itemData: Omit<EnhancedInventoryItem, 'id' | 'addedDate' | 'lastUpdated' | 'isArchived' | 'archivedDate' | 'originalQuantity' | 'timesRestocked' | 'totalConsumed' | 'averageConsumptionRate' | 'lastUsedDate'> | EnhancedInventoryItem) => void;
   onClose: () => void;
 }
 const InventoryItemForm: React.FC<InventoryItemFormProps> = ({ initialItem, onSave, onClose }) => {
   const { stores } = useStores();
+  const { categories, getDefaultCategoryId } = useCategories(); // Use categories context
+
   const [ingredientName, setIngredientName] = useState(initialItem?.ingredientName || '');
-  const [quantity, setQuantity] = useState(initialItem?.quantity || 0);
+  const [quantity, setQuantity] = useState(initialItem?.quantity ?? 0); // Default to 0 for new items
   const [unit, setUnit] = useState<Unit>(initialItem?.unit ?? Unit.PIECE);
-  const [lowStockThreshold, setLowStockThreshold] = useState(initialItem?.lowStockThreshold || undefined); 
+  const [categoryId, setCategoryId] = useState<string>(initialItem?.categoryId || getDefaultCategoryId() || '');
+
+  // Enhanced fields
+  const [lowStockThreshold, setLowStockThreshold] = useState(initialItem?.lowStockThreshold);
   const [expirationDate, setExpirationDate] = useState(initialItem?.expirationDate || '');
   const [frequencyOfUse, setFrequencyOfUse] = useState<FrequencyOfUse | ''>(initialItem?.frequencyOfUse || '');
   const [defaultStoreId, setDefaultStoreId] = useState<string>(initialItem?.defaultStoreId || '');
+  const [brand, setBrand] = useState(initialItem?.brand || '');
+  const [notes, setNotes] = useState(initialItem?.notes || '');
+  const [customTags, setCustomTags] = useState(initialItem?.customTags?.join(', ') || ''); // For simple input
+
+  // Unarchive logic if editing an archived item and quantity is > 0
+  const [isArchivedInitially, setIsArchivedInitially] = useState(initialItem?.isArchived || false);
+  const [unarchiveOnSave, setUnarchiveOnSave] = useState(false);
+
 
   const storeOptions = [{value: '', label: 'No Default Store'}, ...stores.map(s => ({ value: s.id, label: s.name }))];
+  const categoryOptions = categories.map(c => ({ value: c.id, label: `${c.icon} ${c.name}`}));
+
+  useEffect(() => {
+    if (isArchivedInitially && quantity > 0) {
+      setUnarchiveOnSave(true);
+    } else if (isArchivedInitially && quantity <= 0) {
+      setUnarchiveOnSave(false);
+    }
+  }, [quantity, isArchivedInitially]);
 
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const itemData = { 
+    const baseData = {
       ingredientName, 
       quantity: Number(quantity), 
       unit, 
+      categoryId,
       lowStockThreshold: lowStockThreshold ? Number(lowStockThreshold) : undefined,
       expirationDate: expirationDate || undefined,
       frequencyOfUse: frequencyOfUse as FrequencyOfUse || undefined,
       defaultStoreId: defaultStoreId || undefined,
+      brand: brand || undefined,
+      notes: notes || undefined,
+      customTags: customTags.split(',').map(t => t.trim()).filter(t => t),
     };
+
     if (initialItem) {
-      onSave({ ...initialItem, ...itemData });
+       const updatedItem: EnhancedInventoryItem = {
+        ...initialItem,
+        ...baseData,
+        // If unarchiving, update relevant fields
+        ...(unarchiveOnSave && initialItem.isArchived && {
+          isArchived: false,
+          archivedDate: undefined,
+          originalQuantity: undefined,
+          timesRestocked: (initialItem.timesRestocked || 0) + 1,
+        }),
+      };
+      onSave(updatedItem);
     } else {
-      onSave(itemData);
+      // For new items, other fields (id, addedDate etc) are set in InventoryProvider
+      onSave(baseData as Omit<EnhancedInventoryItem, 'id' | 'addedDate' | 'lastUpdated' | 'isArchived' | 'archivedDate' | 'originalQuantity' | 'timesRestocked' | 'totalConsumed' | 'averageConsumptionRate' | 'lastUsedDate'>);
     }
     onClose(); 
   };
@@ -2263,9 +2604,11 @@ const InventoryItemForm: React.FC<InventoryItemFormProps> = ({ initialItem, onSa
     <form onSubmit={handleSubmit} className="space-y-4">
       <InputField label="Ingredient Name" id="invItemName" value={ingredientName} onChange={e => setIngredientName(e.target.value)} required />
       <div className="grid grid-cols-2 gap-4">
-        <InputField label="Quantity" id="invItemQty" type="number" value={quantity} onChange={e => setQuantity(Number(e.target.value))} min="0" step="any" required />
+        <InputField label="Quantity" id="invItemQty" type="number" value={quantity} onChange={e => setQuantity(Number(e.target.value))} step="any" required />
         <SelectField label="Unit" id="invItemUnit" options={UNITS_ARRAY.map(u => ({value: u, label: u}))} value={unit} onChange={e => setUnit(e.target.value as Unit)} required />
       </div>
+      <SelectField label="Category" id="invItemCategory" options={categoryOptions} value={categoryId} onChange={e => setCategoryId(e.target.value)} required />
+
       <div className="grid grid-cols-2 gap-4">
         <InputField label="Low Stock Threshold (Optional)" id="invItemLowStock" type="number" placeholder="e.g., 2" value={lowStockThreshold || ''} onChange={e => setLowStockThreshold(e.target.value === '' ? undefined : Number(e.target.value))} min="0" step="any" />
         <InputField label="Expiration Date (Optional)" id="invItemExpDate" type="date" value={expirationDate} onChange={e => setExpirationDate(e.target.value)} />
@@ -2274,12 +2617,100 @@ const InventoryItemForm: React.FC<InventoryItemFormProps> = ({ initialItem, onSa
         <SelectField label="Frequency of Use (Optional)" id="invItemFreq" options={[{value: '', label: 'Select frequency'}, ...FREQUENCY_OF_USE_OPTIONS]} value={frequencyOfUse} onChange={e => setFrequencyOfUse(e.target.value as FrequencyOfUse | '')} />
         <SelectField label="Default Store (Optional)" id="invItemStore" options={storeOptions} value={defaultStoreId} onChange={e => setDefaultStoreId(e.target.value)} />
       </div>
+      <InputField label="Brand (Optional)" id="invItemBrand" value={brand} onChange={e => setBrand(e.target.value)} />
+      <TextAreaField label="Notes (Optional)" id="invItemNotes" value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
+      <InputField label="Custom Tags (comma-separated, Optional)" id="invItemTags" value={customTags} onChange={e => setCustomTags(e.target.value)} />
+
+      {initialItem?.isArchived && (
+        <p className="text-sm text-orange-600">This item is currently archived. Setting quantity above 0 will unarchive it.</p>
+      )}
+
       <div className="flex justify-end space-x-2 pt-4">
         <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
         <Button type="submit" variant="primary">Save Item</Button>
       </div>
     </form>
   );
+};
+
+
+// Migration Runner Component (New)
+const MigrationRunner: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { currentUser, isLoadingAuth } = useAuth();
+  const [migrationAttempted, setMigrationAttempted] = useState(false);
+  const [migrationError, setMigrationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true; // Prevent state updates on unmounted component
+
+    if (!isLoadingAuth && currentUser && !migrationAttempted) {
+      console.log('MigrationRunner: User authenticated, attempting migration...');
+      // Use a promise wrapper for runMigrationIfNeeded if it's not already async
+      Promise.resolve(runMigrationIfNeeded(currentUser.id))
+        .then((migrationWasRun) => {
+          if (!isMounted) return;
+          if (migrationWasRun) {
+            console.log('MigrationRunner: Migration process completed.');
+            // Optionally, could force a reload of specific contexts or app state here
+            // For now, providers listening to currentUser will reload their data
+          } else {
+            console.log('MigrationRunner: Migration was not needed or already done.');
+          }
+          setMigrationAttempted(true);
+        })
+        .catch(err => {
+          if (!isMounted) return;
+          console.error('MigrationRunner: Migration failed', err);
+          setMigrationError(err.message || 'Unknown migration error');
+          setMigrationAttempted(true); // Mark as attempted even on error
+        });
+    } else if (!isLoadingAuth && !currentUser && !migrationAttempted) {
+      // No user, no migration needed for now. Mark as attempted for this "session".
+      console.log('MigrationRunner: No user, migration check skipped for this session.');
+      setMigrationAttempted(true);
+    }
+
+    return () => { isMounted = false; };
+  }, [currentUser, isLoadingAuth, migrationAttempted]);
+
+  // Reset migrationAttempted if user logs out, so it can run for next login
+  useEffect(() => {
+    if (!currentUser) {
+      setMigrationAttempted(false);
+      setMigrationError(null); // Clear any previous errors
+    }
+  }, [currentUser]);
+
+
+  if (isLoadingAuth || (currentUser && !migrationAttempted && !migrationError)) {
+    // Show loading screen while auth is loading or migration is pending for a logged-in user
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-100">
+        <div className="flex flex-col items-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p className="text-lg text-gray-700">Initializing Kitchen Pal...</p>
+            {currentUser && !migrationAttempted && <p className="text-sm text-gray-500">Checking for data updates...</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (migrationError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-red-100 text-red-700 p-4 text-center">
+        <div className="w-16 h-16 text-red-500 mb-4">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <h1 className="text-2xl font-bold mb-4">Data Migration Error</h1>
+        <p className="mb-2">An error occurred while updating your application data:</p>
+        <p className="mb-4 font-mono bg-red-200 p-3 rounded shadow text-sm">{migrationError}</p>
+        <p className="text-sm">Please try <Button variant="link" onClick={() => window.location.reload()} className="text-red-700 underline">refreshing the application</Button>. If the problem persists, contact support.</p>
+      </div>
+    );
+  }
+
+  // Render children once auth is resolved and migration has been attempted (or not needed for logged-out user)
+  return <>{children}</>;
 };
 
 
@@ -3058,18 +3489,22 @@ const AppLayout: React.FC = () => {
 function App(): React.JSX.Element {
   return (
     <HashRouter>
-      <AuthProvider>
-        <AppStateProvider>
-          <RecipesProvider>
-            <InventoryProvider>
-              <StoresProvider>
-                <ShoppingListsProvider>
-                    <AppLayout />
-                </ShoppingListsProvider>
-              </StoresProvider>
-            </InventoryProvider>
-          </RecipesProvider>
-        </AppStateProvider>
+      <AuthProvider> {/* Manages isLoadingAuth, currentUser */}
+        <MigrationRunner> {/* Runs migration after auth, before other data providers load fully */}
+          <CategoriesProvider> {/* Manages categories, uses useAuth */}
+            <AppStateProvider> {/* Uses useAuth for default view logic */}
+              <RecipesProvider> {/* Uses useAuth */}
+                <InventoryProvider> {/* Uses useAuth, useCategories; THIS IS THE INLINE ONE MODIFIED */}
+                  <StoresProvider> {/* Uses useAuth */}
+                    <ShoppingListsProvider> {/* Uses useAuth */}
+                      <AppLayout />
+                    </ShoppingListsProvider>
+                  </StoresProvider>
+                </InventoryProvider>
+              </RecipesProvider>
+            </AppStateProvider>
+          </CategoriesProvider>
+        </MigrationRunner>
       </AuthProvider>
     </HashRouter>
   );
