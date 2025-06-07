@@ -1,0 +1,30 @@
+tunnel: b089e85d-ac99-43cc-9c3d-e8a1f6980ad0
+
+ingress:
+  # Route all traffic for kitchen-pal.kwakwakwak.com to nginx
+  - hostname: kitchen-pal.kwakwakwak.com
+    service: http://localhost:80
+    originRequest:
+      httpHostHeader: kitchen-pal.kwakwakwak.com
+      noTLSVerify: true
+  
+  # Direct access to pgAdmin (optional, for admin access)
+  - hostname: pgadmin.kitchen-pal.kwakwakwak.com
+    service: http://pgadmin:80
+    originRequest:
+      httpHostHeader: pgadmin.kitchen-pal.kwakwakwak.com
+      noTLSVerify: true
+  
+  # Catch-all rule (required)
+  - service: http_status:404
+
+# Cloudflare settings
+originRequest:
+  connectTimeout: 30s
+  tlsTimeout: 10s
+  tcpKeepAlive: 30s
+  noTLSVerify: false
+  originServerName: kitchen-pal.kwakwakwak.com
+
+# Logging
+loglevel: info 

@@ -1,0 +1,143 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: kitchen-pal-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kitchen_pal}
+      POSTGRES_USER: ${POSTGRES_USER:-kitchen_pal_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - kitchen-pal-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kitchen_pal_user} -d ${POSTGRES_DB:-kitchen_pal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin 4 for Database Management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: kitchen-pal-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@kitchen-pal.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./database/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "5050:80"
+    networks:
+      - kitchen-pal-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Kitchen Pal Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kitchen-pal-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kitchen_pal_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kitchen_pal}
+    volumes:
+      - app_data:/app/data
+    ports:
+      - "3000:3000"
+    networks:
+      - kitchen-pal-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: kitchen-pal-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - kitchen-pal-network
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Cloudflare Tunnel
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: kitchen-pal-tunnel
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml run kitchen-pal
+    volumes:
+      - ./cloudflare/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflare/cert.pem:/etc/cloudflared/cert.pem:ro
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - kitchen-pal-network
+    depends_on:
+      - nginx
+
+  # Redis for Session Management (Optional but recommended)
+  redis:
+    image: redis:7-alpine
+    container_name: kitchen-pal-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - kitchen-pal-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  app_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  kitchen-pal-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 
