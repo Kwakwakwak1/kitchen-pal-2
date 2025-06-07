@@ -3,7 +3,7 @@ tunnel: b089e85d-ac99-43cc-9c3d-e8a1f6980ad0
 ingress:
   # Route all traffic for kitchen-pal.kwakwakwak.com to nginx
   - hostname: kitchen-pal.kwakwakwak.com
-    service: http://localhost:80
+    service: http://nginx:80
     originRequest:
       httpHostHeader: kitchen-pal.kwakwakwak.com
       noTLSVerify: true

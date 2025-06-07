@@ -14,7 +14,8 @@
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
     "docker:restart": "docker-compose restart",
-    "docker:clean": "docker-compose down -v && docker system prune -f"
+    "docker:clean": "docker-compose down -v && docker system prune -f",
+    "docker:deploy": "docker-compose build && docker-compose up -d"
   },
   "dependencies": {
     "@types/cheerio": "^0.22.35",

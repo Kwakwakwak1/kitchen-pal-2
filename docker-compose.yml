@@ -70,6 +70,25 @@ services:
       timeout: 10s
       retries: 3
 
+  # Recipe Proxy Server for CORS handling
+  recipe-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    container_name: kitchen-pal-proxy
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    networks:
+      - kitchen-pal-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # Nginx Reverse Proxy
   nginx:
     image: nginx:alpine
