@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Pal API Dashboard</title>
+    <script src="https://unpkg.com/react@19/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@19/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            margin: 0; 
+            background: #f8f9fa; 
+            color: #212529;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 30px 20px; 
+            margin: -20px -20px 30px -20px; 
+            border-radius: 0 0 10px 10px;
+        }
+        .header h1 { margin: 0; font-size: 2.5rem; font-weight: 300; }
+        .header p { margin: 10px 0 0 0; opacity: 0.9; }
+        
+        .config-section { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            margin-bottom: 20px;
+        }
+        
+        .endpoint-category {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .category-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #dee2e6;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .category-header:hover { background: #e9ecef; }
+        
+        .category-content {
+            padding: 20px;
+            display: none;
+        }
+        
+        .category-content.active { display: block; }
+        
+        .endpoint {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        
+        .endpoint-header {
+            background: #f8f9fa;
+            padding: 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .endpoint-header:hover { background: #e9ecef; }
+        
+        .method-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            min-width: 60px;
+            text-align: center;
+        }
+        
+        .method-get { background: #28a745; }
+        .method-post { background: #007bff; }
+        .method-put { background: #ffc107; color: #212529; }
+        .method-delete { background: #dc3545; }
+        
+        .endpoint-body {
+            padding: 20px;
+            display: none;
+            border-top: 1px solid #dee2e6;
+        }
+        
+        .endpoint-body.active { display: block; }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        }
+        
+        textarea.form-control {
+            resize: vertical;
+            min-height: 100px;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover { background: #0056b3; }
+        .btn-primary:disabled { background: #6c757d; cursor: not-allowed; }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover { background: #545b62; }
+        
+        .response-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .response-section h4 {
+            margin: 0 0 10px 0;
+            color: #495057;
+        }
+        
+        .response-content {
+            background: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .status-success { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+        .status-loading { background: #d1ecf1; color: #0c5460; }
+        
+        .auth-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .auth-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        
+        .auth-indicator.authenticated { background: #28a745; }
+        .auth-indicator.unauthenticated { background: #dc3545; }
+        
+        .logs-section {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        
+        .logs-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logs-content {
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        
+        .log-info { background: #d1ecf1; color: #0c5460; }
+        .log-success { background: #d4edda; color: #155724; }
+        .log-error { background: #f8d7da; color: #721c24; }
+        .log-loading { background: #fff3cd; color: #856404; }
+        
+        .toggle-icon {
+            transition: transform 0.2s;
+        }
+        
+        .toggle-icon.rotated {
+            transform: rotate(90deg);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const ApiDashboard = () => {
+            const [apiUrl, setApiUrl] = useState(localStorage.getItem('apiUrl') || 'https://kitchen-pal.kwakwakwak.com/api');
+            const [token, setToken] = useState(localStorage.getItem('authToken') || '');
+            const [logs, setLogs] = useState([]);
+            const [openCategories, setOpenCategories] = useState({ auth: true });
+            const [openEndpoints, setOpenEndpoints] = useState({});
+            const [responses, setResponses] = useState({});
+            const [loading, setLoading] = useState({});
+
+            // Form states for different endpoints
+            const [authData, setAuthData] = useState({
+                email: 'test@example.com',
+                password: 'password123',
+                first_name: 'Test',
+                last_name: 'User'
+            });
+
+            const [storeData, setStoreData] = useState({
+                name: 'Test Store',
+                location: 'Test Location',
+                website: 'https://example.com'
+            });
+
+            const [shoppingListData, setShoppingListData] = useState({
+                name: 'Test Shopping List',
+                is_active: true
+            });
+
+            const [recipeData, setRecipeData] = useState({
+                title: 'Test Recipe',
+                description: 'A test recipe',
+                prep_time: 15,
+                cook_time: 30,
+                servings: 4,
+                difficulty: 'easy',
+                cuisine: 'american',
+                meal_type: 'dinner'
+            });
+
+            const [feedbackData, setFeedbackData] = useState({
+                subject: 'Test Feedback',
+                message: 'This is a test feedback message',
+                category: 'general',
+                priority: 'medium'
+            });
+
+            useEffect(() => {
+                localStorage.setItem('apiUrl', apiUrl);
+                localStorage.setItem('authToken', token);
+            }, [apiUrl, token]);
+
+            const addLog = (message, type = 'info') => {
+                const timestamp = new Date().toLocaleTimeString();
+                setLogs(prev => [...prev, { 
+                    id: Date.now(), 
+                    message: `[${timestamp}] ${message}`, 
+                    type 
+                }]);
+            };
+
+            const clearLogs = () => setLogs([]);
+
+            const toggleCategory = (category) => {
+                setOpenCategories(prev => ({
+                    ...prev,
+                    [category]: !prev[category]
+                }));
+            };
+
+            const toggleEndpoint = (endpointId) => {
+                setOpenEndpoints(prev => ({
+                    ...prev,
+                    [endpointId]: !prev[endpointId]
+                }));
+            };
+
+            const makeRequest = async (endpointId, method, path, data = null, requiresAuth = true) => {
+                if (!apiUrl.trim()) {
+                    addLog('❌ Please set API URL first', 'error');
+                    return;
+                }
+
+                if (requiresAuth && !token) {
+                    addLog('❌ Authentication required. Please login first.', 'error');
+                    return;
+                }
+
+                setLoading(prev => ({ ...prev, [endpointId]: true }));
+                addLog(`🚀 ${method} ${path}`, 'loading');
+
+                try {
+                    const config = {
+                        method,
+                        url: `${apiUrl.replace(/\/$/, '')}${path}`,
+                        headers: {}
+                    };
+
+                    if (requiresAuth && token) {
+                        config.headers.Authorization = `Bearer ${token}`;
+                    }
+
+                    if (data && (method === 'POST' || method === 'PUT')) {
+                        config.data = data;
+                        config.headers['Content-Type'] = 'application/json';
+                    }
+
+                    const response = await axios(config);
+                    
+                    setResponses(prev => ({
+                        ...prev,
+                        [endpointId]: {
+                            status: response.status,
+                            data: response.data,
+                            headers: response.headers
+                        }
+                    }));
+
+                    addLog(`✅ ${method} ${path} - ${response.status}`, 'success');
+
+                    // Handle auth responses
+                    if ((path === '/auth/login' || path === '/auth/register') && response.data.accessToken) {
+                        setToken(response.data.accessToken);
+                        addLog(`🔑 Auth token updated`, 'success');
+                    }
+
+                } catch (error) {
+                    const errorData = {
+                        status: error.response?.status || 'Network Error',
+                        data: error.response?.data || { error: { message: error.message } },
+                        headers: error.response?.headers || {}
+                    };
+
+                    setResponses(prev => ({
+                        ...prev,
+                        [endpointId]: errorData
+                    }));
+
+                    addLog(`❌ ${method} ${path} - ${errorData.status}: ${errorData.data?.error?.message || error.message}`, 'error');
+                } finally {
+                    setLoading(prev => ({ ...prev, [endpointId]: false }));
+                }
+            };
+
+            const endpointCategories = [
+                {
+                    id: 'auth',
+                    title: 'Authentication',
+                    description: 'User registration, login, and authentication',
+                    endpoints: [
+                        {
+                            id: 'health',
+                            method: 'GET',
+                            path: '/health',
+                            title: 'Health Check',
+                            description: 'Check API health status',
+                            requiresAuth: false
+                        },
+                        {
+                            id: 'register',
+                            method: 'POST',
+                            path: '/auth/register',
+                            title: 'Register User',
+                            description: 'Register a new user account',
+                            requiresAuth: false,
+                            body: 'authData'
+                        },
+                        {
+                            id: 'login',
+                            method: 'POST',
+                            path: '/auth/login',
+                            title: 'Login User',
+                            description: 'Login with email and password',
+                            requiresAuth: false,
+                            body: 'authData'
+                        },
+                        {
+                            id: 'me',
+                            method: 'GET',
+                            path: '/auth/me',
+                            title: 'Get Current User',
+                            description: 'Get current authenticated user info',
+                            requiresAuth: true
+                        }
+                    ]
+                },
+                {
+                    id: 'users',
+                    title: 'User Management',
+                    description: 'User profile and preferences',
+                    endpoints: [
+                        {
+                            id: 'profile',
+                            method: 'GET',
+                            path: '/users/profile',
+                            title: 'Get Profile',
+                            description: 'Get current user profile',
+                            requiresAuth: true
+                        },
+                        {
+                            id: 'preferences',
+                            method: 'GET',
+                            path: '/users/preferences',
+                            title: 'Get Preferences',
+                            description: 'Get user preferences',
+                            requiresAuth: true
+                        },
+                        {
+                            id: 'stats',
+                            method: 'GET',
+                            path: '/users/stats',
+                            title: 'Get User Stats',
+                            description: 'Get user statistics',
+                            requiresAuth: true
+                        }
+                    ]
+                },
+                {
+                    id: 'stores',
+                    title: 'Store Management',
+                    description: 'Manage grocery stores',
+                    endpoints: [
+                        {
+                            id: 'getStores',
+                            method: 'GET',
+                            path: '/stores',
+                            title: 'Get Stores',
+                            description: 'Get all user stores',
+                            requiresAuth: true
+                        },
+                        {
+                            id: 'createStore',
+                            method: 'POST',
+                            path: '/stores',
+                            title: 'Create Store',
+                            description: 'Create a new store',
+                            requiresAuth: true,
+                            body: 'storeData'
+                        }
+                    ]
+                },
+                {
+                    id: 'shopping',
+                    title: 'Shopping Lists',
+                    description: 'Manage shopping lists and items',
+                    endpoints: [
+                        {
+                            id: 'getShoppingLists',
+                            method: 'GET',
+                            path: '/shopping/lists',
+                            title: 'Get Shopping Lists',
+                            description: 'Get all shopping lists',
+                            requiresAuth: true
+                        },
+                        {
+                            id: 'createShoppingList',
+                            method: 'POST',
+                            path: '/shopping/lists',
+                            title: 'Create Shopping List',
+                            description: 'Create a new shopping list',
+                            requiresAuth: true,
+                            body: 'shoppingListData'
+                        }
+                    ]
+                },
+                {
+                    id: 'recipes',
+                    title: 'Recipe Management',
+                    description: 'Manage recipes and ingredients',
+                    endpoints: [
+                        {
+                            id: 'getRecipes',
+                            method: 'GET',
+                            path: '/recipes',
+                            title: 'Get Recipes',
+                            description: 'Get all user recipes',
+                            requiresAuth: true
+                        },
+                        {
+                            id: 'createRecipe',
+                            method: 'POST',
+                            path: '/recipes',
+                            title: 'Create Recipe',
+                            description: 'Create a new recipe',
+                            requiresAuth: true,
+                            body: 'recipeData'
+                        }
+                    ]
+                },
+                {
+                    id: 'meals',
+                    title: 'Meal Planning',
+                    description: 'Manage meal plans',
+                    endpoints: [
+                        {
+                            id: 'getMealPlans',
+                            method: 'GET',
+                            path: '/meals/plans',
+                            title: 'Get Meal Plans',
+                            description: 'Get all meal plans',
+                            requiresAuth: true
+                        }
+                    ]
+                },
+                {
+                    id: 'inventory',
+                    title: 'Inventory Management',
+                    description: 'Manage pantry inventory',
+                    endpoints: [
+                        {
+                            id: 'getInventory',
+                            method: 'GET',
+                            path: '/inventory',
+                            title: 'Get Inventory',
+                            description: 'Get all inventory items',
+                            requiresAuth: true
+                        },
+                        {
+                            id: 'getLowStock',
+                            method: 'GET',
+                            path: '/inventory/low-stock',
+                            title: 'Get Low Stock',
+                            description: 'Get low stock items',
+                            requiresAuth: true
+                        }
+                    ]
+                },
+                {
+                    id: 'feedback',
+                    title: 'User Feedback',
+                    description: 'Submit and manage feedback',
+                    endpoints: [
+                        {
+                            id: 'submitFeedback',
+                            method: 'POST',
+                            path: '/feedback',
+                            title: 'Submit Feedback',
+                            description: 'Submit user feedback',
+                            requiresAuth: true,
+                            body: 'feedbackData'
+                        },
+                        {
+                            id: 'getFeedback',
+                            method: 'GET',
+                            path: '/feedback',
+                            title: 'Get Feedback',
+                            description: 'Get user feedback history',
+                            requiresAuth: true
+                        }
+                    ]
+                }
+            ];
+
+            const getBodyData = (bodyType) => {
+                switch (bodyType) {
+                    case 'authData': return authData;
+                    case 'storeData': return storeData;
+                    case 'shoppingListData': return shoppingListData;
+                    case 'recipeData': return recipeData;
+                    case 'feedbackData': return feedbackData;
+                    default: return null;
+                }
+            };
+
+            const updateBodyData = (bodyType, field, value) => {
+                switch (bodyType) {
+                    case 'authData':
+                        setAuthData(prev => ({ ...prev, [field]: value }));
+                        break;
+                    case 'storeData':
+                        setStoreData(prev => ({ ...prev, [field]: value }));
+                        break;
+                    case 'shoppingListData':
+                        setShoppingListData(prev => ({ ...prev, [field]: value }));
+                        break;
+                    case 'recipeData':
+                        setRecipeData(prev => ({ ...prev, [field]: value }));
+                        break;
+                    case 'feedbackData':
+                        setFeedbackData(prev => ({ ...prev, [field]: value }));
+                        break;
+                }
+            };
+
+            const renderBodyForm = (bodyType) => {
+                const data = getBodyData(bodyType);
+                if (!data) return null;
+
+                return (
+                    <div className="form-group">
+                        <label>Request Body (JSON)</label>
+                        <textarea
+                            className="form-control"
+                            value={JSON.stringify(data, null, 2)}
+                            onChange={(e) => {
+                                try {
+                                    const parsed = JSON.parse(e.target.value);
+                                    Object.keys(parsed).forEach(key => {
+                                        updateBodyData(bodyType, key, parsed[key]);
+                                    });
+                                } catch (err) {
+                                    // Invalid JSON, ignore
+                                }
+                            }}
+                            rows={8}
+                            placeholder="JSON request body"
+                        />
+                    </div>
+                );
+            };
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>🍳 Kitchen Pal API Dashboard</h1>
+                        <p>Test and explore your Kitchen Pal API endpoints with ease</p>
+                    </div>
+
+                    <div className="config-section">
+                        <h3>🔧 Configuration</h3>
+                        <div className="form-group">
+                            <label>API Base URL</label>
+                            <input
+                                type="text"
+                                className="form-control"
+                                placeholder="https://kitchen-pal.kwakwakwak.com/api"
+                                value={apiUrl}
+                                onChange={(e) => setApiUrl(e.target.value)}
+                            />
+                        </div>
+                        <div className="auth-status">
+                            <div className={`auth-indicator ${token ? 'authenticated' : 'unauthenticated'}`}></div>
+                            <span>Authentication: {token ? 'Authenticated' : 'Not authenticated'}</span>
+                            {token && (
+                                <button 
+                                    className="btn btn-secondary"
+                                    onClick={() => setToken('')}
+                                    style={{ marginLeft: 'auto', padding: '5px 10px', fontSize: '12px' }}
+                                >
+                                    Clear Token
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {endpointCategories.map(category => (
+                        <div key={category.id} className="endpoint-category">
+                            <div 
+                                className="category-header"
+                                onClick={() => toggleCategory(category.id)}
+                            >
+                                <div>
+                                    <strong>{category.title}</strong>
+                                    <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '2px' }}>
+                                        {category.description}
+                                    </div>
+                                </div>
+                                <span className={`toggle-icon ${openCategories[category.id] ? 'rotated' : ''}`}>▶</span>
+                            </div>
+                            <div className={`category-content ${openCategories[category.id] ? 'active' : ''}`}>
+                                {category.endpoints.map(endpoint => (
+                                    <div key={endpoint.id} className="endpoint">
+                                        <div 
+                                            className="endpoint-header"
+                                            onClick={() => toggleEndpoint(endpoint.id)}
+                                        >
+                                            <span className={`method-badge method-${endpoint.method.toLowerCase()}`}>
+                                                {endpoint.method}
+                                            </span>
+                                            <div>
+                                                <strong>{endpoint.path}</strong>
+                                                <div style={{ fontSize: '12px', color: '#6c757d' }}>
+                                                    {endpoint.description}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className={`endpoint-body ${openEndpoints[endpoint.id] ? 'active' : ''}`}>
+                                            {endpoint.body && renderBodyForm(endpoint.body)}
+                                            
+                                            <button
+                                                className="btn btn-primary"
+                                                onClick={() => makeRequest(
+                                                    endpoint.id, 
+                                                    endpoint.method, 
+                                                    endpoint.path, 
+                                                    endpoint.body ? getBodyData(endpoint.body) : null,
+                                                    endpoint.requiresAuth
+                                                )}
+                                                disabled={loading[endpoint.id]}
+                                            >
+                                                {loading[endpoint.id] ? 'Loading...' : `${endpoint.method} ${endpoint.title}`}
+                                            </button>
+
+                                            {responses[endpoint.id] && (
+                                                <div className="response-section">
+                                                    <h4>Response</h4>
+                                                    <div className={`status-badge ${responses[endpoint.id].status < 400 ? 'status-success' : 'status-error'}`}>
+                                                        Status: {responses[endpoint.id].status}
+                                                    </div>
+                                                    <div className="response-content">
+                                                        {JSON.stringify(responses[endpoint.id].data, null, 2)}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+
+                    <div className="logs-section">
+                        <div className="logs-header">
+                            <h3>📝 Request Logs</h3>
+                            <button className="btn btn-secondary" onClick={clearLogs}>
+                                Clear Logs
+                            </button>
+                        </div>
+                        <div className="logs-content">
+                            {logs.length === 0 ? (
+                                <div style={{ color: '#6c757d', fontStyle: 'italic' }}>
+                                    No requests made yet. Start testing your API endpoints above!
+                                </div>
+                            ) : (
+                                logs.map(log => (
+                                    <div key={log.id} className={`log-entry log-${log.type}`}>
+                                        {log.message}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<ApiDashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>

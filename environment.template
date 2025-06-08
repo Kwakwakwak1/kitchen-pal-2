@@ -4,7 +4,7 @@
 # Database Configuration
 POSTGRES_DB=kitchen_pal
 POSTGRES_USER=kitchen_pal_user
-POSTGRES_PASSWORD=your_secure_database_password_here
+POSTGRES_PASSWORD=kitchen_pal_password
 
 # pgAdmin Configuration
 PGADMIN_EMAIL=admin@kitchen-pal.local

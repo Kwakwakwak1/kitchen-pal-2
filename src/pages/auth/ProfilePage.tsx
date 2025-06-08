@@ -1,6 +1,7 @@
 import React, { useState, FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth, useStores } from '../../../App';
+import { useAuth } from '../../providers/AuthProviderAPI';
+import { useStores } from '../../providers/StoresProviderAPI';
 import { MeasurementSystem } from '../../../types';
 import { MEASUREMENT_SYSTEM_OPTIONS } from '../../../constants';
 import { Card, Button, InputField, SelectField, Alert } from '../../../components';

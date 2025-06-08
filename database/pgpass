@@ -1,0 +1,3 @@
+postgres:5432:kitchen_pal:kitchen_pal_user:kitchen_pal_password
+postgres:5432:*:kitchen_pal_user:kitchen_pal_password
+*:*:*:kitchen_pal_user:kitchen_pal_password 

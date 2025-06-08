@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  useShoppingLists, 
-  useInventory, 
-  useStores, 
-  useAppState 
-} from '../../App';
+import { useShoppingLists } from '../providers/ShoppingListsProviderAPI';
+import { useInventory } from '../providers/InventoryProviderAPI';
+import { useStores } from '../providers/StoresProviderAPI';
+import { useAppState } from '../providers/AppStateProvider';
 import { 
   ShoppingListItem, 
   InventoryItem 

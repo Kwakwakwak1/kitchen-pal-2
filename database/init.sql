@@ -1,6 +1,19 @@
 -- Kitchen Pal Database Initialization Script
 -- This script sets up the initial database schema for user authentication and data storage
 
+-- Note: The PostgreSQL Docker container automatically creates the application user
+-- from POSTGRES_USER and POSTGRES_PASSWORD environment variables, so we don't need to create it here
+
+-- Grant necessary permissions to the application user (this will run after user creation)
+GRANT ALL PRIVILEGES ON DATABASE kitchen_pal TO kitchen_pal_user;
+GRANT ALL PRIVILEGES ON SCHEMA public TO kitchen_pal_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO kitchen_pal_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO kitchen_pal_user;
+
+-- Ensure future tables also have the right permissions
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO kitchen_pal_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO kitchen_pal_user;
+
 -- Create extension for UUID generation
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

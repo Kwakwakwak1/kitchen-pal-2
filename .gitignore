@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Claude AI configuration with sensitive tokens
+.claude/settings.json
+
+/src/generated/prisma

@@ -1,4 +1,4 @@
-# Simple Node.js build for Kitchen Pal React Application
+# Frontend for Kitchen Pal React Application
 FROM node:18-alpine
 
 # Install curl for health checks
@@ -13,8 +13,13 @@ RUN npm ci && npm cache clean --force
 # Copy source code
 COPY . .
 
+# Build arguments for Vite environment variables
+# For production, API requests should go to the same domain (no explicit URL)
+ARG VITE_API_URL=""
+
 # Build the application
 ENV NODE_ENV=production
+ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
 # Remove dev dependencies after build
@@ -30,5 +35,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/ || exit 1
 
-# Start the application
+# Start the frontend
 CMD ["serve", "-s", "dist", "-l", "3000"] 

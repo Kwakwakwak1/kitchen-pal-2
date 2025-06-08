@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  useInventory, 
-  useShoppingLists, 
-  useAppState, 
-  useAuth 
-} from '../../../App';
+import { useInventory } from '../../providers/InventoryProviderAPI';
+import { useShoppingLists } from '../../providers/ShoppingListsProviderAPI';
+import { useAppState } from '../../providers/AppStateProvider';
+import { useAuth } from '../../providers/AuthProviderAPI';
 import { 
   generateId, 
   isItemExpiringSoon, 

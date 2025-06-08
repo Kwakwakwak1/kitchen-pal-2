@@ -2,7 +2,7 @@ import React, { useState, FormEvent } from 'react';
 import { InventoryItem, Unit, FrequencyOfUse } from '../../../types';
 import { UNITS_ARRAY, FREQUENCY_OF_USE_OPTIONS } from '../../../constants';
 import { InputField, SelectField, Button } from '../../../components';
-import { useStores } from '../../../App';
+import { useStores } from '../../providers/StoresProviderAPI';
 
 interface InventoryItemFormProps {
   initialItem?: InventoryItem;

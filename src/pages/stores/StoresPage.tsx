@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Store } from '../../../types';
-import { useStores, useAppState } from '../../../App';
+import { useStores } from '../../providers/StoresProviderAPI';
+import { useAppState } from '../../providers/AppStateProvider';
 import { BuildingStorefrontIcon, MagnifyingGlassIcon, PlusIcon, PencilIcon, TrashIcon } from '../../../constants';
 import { Modal, Button, Card, EmptyState, AddItemButton } from '../../../components';
 import StoreForm from './StoreForm';

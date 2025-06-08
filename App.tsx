@@ -2897,9 +2897,9 @@ const AppLayout: React.FC = () => {
       <nav className="bg-white shadow-md sticky top-0 z-40">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
-            <Link to={currentUser ? "/dashboard" : "/login"} onClick={() => setActiveView(currentUser ? 'dashboard' : 'login')} className="text-2xl font-bold text-blue-600 flex items-center">
-              <img src="/vite.svg" alt="Kitchen Pal Logo" className="h-8 w-8 mr-2" /> 
-              {APP_NAME}
+            <Link to={currentUser ? "/dashboard" : "/login"} onClick={() => setActiveView(currentUser ? 'dashboard' : 'login')} className="flex items-center">
+              <img src="/images/kitchen-pal-logo-spoon-1.png" alt="Kitchen Pal Spoon" className="h-10 w-auto mr-2" />
+              <img src="/images/kitchen-pal-logo-text.png" alt="Kitchen Pal" className="h-8 w-auto" />
             </Link>
             
             {/* Desktop Nav */}

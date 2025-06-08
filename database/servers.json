@@ -1,0 +1,16 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Kitchen Pal Database",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "kitchen_pal",
+      "Username": "kitchen_pal_user",
+      "PassFile": "/pgadmin4/pgpass",
+      "SSLMode": "disable",
+      "Timeout": 10,
+      "UseSSHTunnel": 0
+    }
+  }
+}

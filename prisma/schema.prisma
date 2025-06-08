@@ -1,0 +1,240 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model users {
+  id                     String   @id @default(uuid())
+  email                  String   @unique
+  password_hash          String
+  first_name             String?  @db.VarChar(100)
+  last_name              String?  @db.VarChar(100)
+  is_verified            Boolean  @default(false)
+  verification_token     String?
+  reset_password_token   String?
+  reset_password_expires DateTime?
+  created_at             DateTime @default(now())
+  updated_at             DateTime @default(now()) @updatedAt
+  last_login             DateTime?
+
+  // Relations
+  user_sessions      user_sessions[]
+  user_preferences   user_preferences[]
+  recipes            recipes[]
+  user_inventory     user_inventory[]
+  shopping_lists     shopping_lists[]
+  meal_plans         meal_plans[]
+  recipe_reviews     recipe_reviews[]
+  user_feedback      user_feedback[]
+  admin_feedback     user_feedback[] @relation("AdminFeedback")
+  stores             stores[]
+}
+
+model user_sessions {
+  id            String   @id @default(uuid())
+  user_id       String
+  session_token String   @unique
+  expires_at    DateTime
+  created_at    DateTime @default(now())
+
+  // Relations
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([session_token])
+  @@index([expires_at])
+}
+
+model user_preferences {
+  id                      String   @id @default(uuid())
+  user_id                 String
+  theme                   String   @default("light") @db.VarChar(20)
+  language                String   @default("en") @db.VarChar(10)
+  notifications_enabled   Boolean  @default(true)
+  dietary_restrictions    String[]
+  created_at              DateTime @default(now())
+  updated_at              DateTime @default(now()) @updatedAt
+
+  // Relations
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model recipes {
+  id               String   @id @default(uuid())
+  user_id          String
+  title            String   @db.VarChar(255)
+  description      String?
+  instructions     String
+  prep_time        Int?
+  cook_time        Int?
+  servings         Int?
+  difficulty_level String?  @db.VarChar(20)
+  cuisine_type     String?  @db.VarChar(100)
+  meal_type        String?  @db.VarChar(50)
+  is_public        Boolean  @default(false)
+  image_url        String?  @db.VarChar(500)
+  source_url       String?  @db.VarChar(500)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now()) @updatedAt
+
+  // Relations
+  user               users                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  recipe_ingredients recipe_ingredients[]
+  meal_plan_recipes  meal_plan_recipes[]
+  recipe_reviews     recipe_reviews[]
+
+  @@index([user_id])
+  @@index([created_at])
+}
+
+model recipe_ingredients {
+  id              String   @id @default(uuid())
+  recipe_id       String
+  ingredient_name String   @db.VarChar(255)
+  quantity        Decimal? @db.Decimal(10, 2)
+  unit            String?  @db.VarChar(50)
+  notes           String?
+  created_at      DateTime @default(now())
+
+  // Relations
+  recipe recipes @relation(fields: [recipe_id], references: [id], onDelete: Cascade)
+
+  @@index([recipe_id])
+}
+
+model user_inventory {
+  id              String    @id @default(uuid())
+  user_id         String
+  ingredient_name String    @db.VarChar(255)
+  quantity        Decimal?  @db.Decimal(10, 2)
+  unit            String?   @db.VarChar(50)
+  expiry_date     DateTime?
+  location        String?   @db.VarChar(100)
+  notes           String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @default(now()) @updatedAt
+
+  // Relations
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+model shopping_lists {
+  id                   String   @id @default(uuid())
+  user_id              String
+  name                 String   @db.VarChar(255)
+  is_active            Boolean  @default(true)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @default(now()) @updatedAt
+
+  // Relations
+  user                 users                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  shopping_list_items  shopping_list_items[]
+
+  @@index([user_id])
+}
+
+model shopping_list_items {
+  id                String   @id @default(uuid())
+  shopping_list_id  String
+  ingredient_name   String   @db.VarChar(255)
+  quantity          Decimal? @db.Decimal(10, 2)
+  unit              String?  @db.VarChar(50)
+  is_purchased      Boolean  @default(false)
+  notes             String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now()) @updatedAt
+
+  // Relations
+  shopping_list shopping_lists @relation(fields: [shopping_list_id], references: [id], onDelete: Cascade)
+}
+
+model meal_plans {
+  id                String   @id @default(uuid())
+  user_id           String
+  name              String   @db.VarChar(255)
+  start_date        DateTime @db.Date
+  end_date          DateTime @db.Date
+  created_at        DateTime @default(now())
+  updated_at        DateTime @default(now()) @updatedAt
+
+  // Relations
+  user              users                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  meal_plan_recipes meal_plan_recipes[]
+
+  @@index([user_id])
+}
+
+model meal_plan_recipes {
+  id           String   @id @default(uuid())
+  meal_plan_id String
+  recipe_id    String
+  meal_date    DateTime @db.Date
+  meal_type    String   @db.VarChar(20)
+  servings     Int      @default(1)
+  created_at   DateTime @default(now())
+
+  // Relations
+  meal_plan meal_plans @relation(fields: [meal_plan_id], references: [id], onDelete: Cascade)
+  recipe    recipes    @relation(fields: [recipe_id], references: [id], onDelete: Cascade)
+}
+
+model recipe_reviews {
+  id          String   @id @default(uuid())
+  recipe_id   String
+  user_id     String
+  rating      Int?
+  review_text String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  // Relations
+  recipe recipes @relation(fields: [recipe_id], references: [id], onDelete: Cascade)
+  user   users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([recipe_id, user_id])
+}
+
+model user_feedback {
+  id             String    @id @default(uuid())
+  user_id        String?
+  feedback_type  String    @db.VarChar(50)
+  category       String?   @db.VarChar(100)
+  subject        String?   @db.VarChar(255)
+  message        String
+  priority       String    @default("medium") @db.VarChar(20)
+  status         String    @default("pending") @db.VarChar(20)
+  admin_response String?
+  admin_id       String?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @default(now()) @updatedAt
+
+  // Relations
+  user  users? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  admin users? @relation("AdminFeedback", fields: [admin_id], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([created_at])
+}
+
+model stores {
+  id          String   @id @default(uuid())
+  user_id     String
+  name        String   @db.VarChar(255)
+  location    String?  @db.VarChar(500)
+  website     String?  @db.VarChar(500)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  // Relations
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
