@@ -166,4 +166,13 @@ rm -f start-dev-safe.sh docker-compose.dev.yml
 4. **Independent data**: Each environment has its own database and users
 5. **No downtime**: Production keeps running while you develop
 
-This setup gives you the best of both worlds - a safe development environment and a running production system! 🎉 
+📋 Login Credentials
+Admin Access (for testing admin features):
+Email: admin@kitchen-pal.local
+Password: admin123
+Developer Account (also admin):
+Email: dev@kitchen-pal.local
+Password: dev123
+Test User (with sample inventory):
+Email: test@kitchen-pal.local
+Password: test123
