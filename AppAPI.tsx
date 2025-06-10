@@ -19,6 +19,13 @@ import { ShoppingListDetailPage } from './src/pages/ShoppingListDetailPage';
 import AdminDashboardPage from './src/pages/admin/AdminDashboardPage';
 import ProtectedRoute from './src/components/shared/ProtectedRoute';
 
+// Import API-integrated pages
+import RecipesPageAPI from './src/pages/recipes/RecipesPageAPI';
+import RecipeDetailPageAPI from './src/pages/recipes/RecipeDetailPageAPI';
+import ShoppingListsPageAPI from './src/pages/shopping-lists/ShoppingListsPageAPI';
+import ShoppingListGeneratorPageAPI from './src/pages/shopping-lists/ShoppingListGeneratorPageAPI';
+// import InventoryPage from './src/pages/inventory/InventoryPage'; // TODO: Convert to API
+
 // Import UI components and utilities
 import { Button, SearchInput } from './components';
 import { APP_NAME, DEFAULT_AVATAR_IMAGE } from './constants';
@@ -32,14 +39,6 @@ import { ActiveView } from './types';
 // Import hooks from API providers
 import { useAuth } from './src/providers/AuthProviderAPI';
 import { useAppState } from './src/providers/AppStateProvider';
-
-// TODO: Import these pages when they're converted to work with API providers
-// import RecipesPage from './src/pages/recipes/RecipesPage';
-import RecipesPageAPI from './src/pages/recipes/RecipesPageAPI';
-import RecipeDetailPageAPI from './src/pages/recipes/RecipeDetailPageAPI';
-// import InventoryPage from './src/pages/inventory/InventoryPage';
-// import ShoppingListsPage from './src/pages/shopping-lists/ShoppingListsPage';
-// import ShoppingListGeneratorPage from './src/pages/shopping-lists/ShoppingListGeneratorPage';
 
 // Temporary placeholder pages until we convert the main pages
 const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => (
@@ -252,9 +251,9 @@ const AppLayoutAPI: React.FC = () => {
           <Route path="/recipes" element={<ProtectedRoute><RecipesPageAPI /></ProtectedRoute>} />
           <Route path="/recipe_detail/:id" element={<ProtectedRoute><RecipeDetailPageAPI /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute><PlaceholderPage title="Inventory" /></ProtectedRoute>} />
-          <Route path="/shopping_lists" element={<ProtectedRoute><PlaceholderPage title="Shopping Lists" /></ProtectedRoute>} />
+          <Route path="/shopping_lists" element={<ProtectedRoute><ShoppingListsPageAPI /></ProtectedRoute>} />
           <Route path="/shopping_list_detail/:id" element={<ProtectedRoute><ShoppingListDetailPage /></ProtectedRoute>} />
-          <Route path="/generate_shopping_list" element={<ProtectedRoute><PlaceholderPage title="Generate Shopping List" /></ProtectedRoute>} />
+          <Route path="/generate_shopping_list" element={<ProtectedRoute><ShoppingListGeneratorPageAPI /></ProtectedRoute>} />
           <Route path="/stores" element={<ProtectedRoute><StoresPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           

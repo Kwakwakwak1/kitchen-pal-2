@@ -35,6 +35,7 @@
     "docker:deploy-and-fix": "npm run docker:deploy && npm run docker:fix-db"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@prisma/client": "^6.9.0",
     "@tailwindcss/postcss": "^4.1.8",
     "@tanstack/react-query": "^5.80.6",

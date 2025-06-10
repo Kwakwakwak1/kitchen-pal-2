@@ -7,6 +7,13 @@ export { default as recipesService } from './recipesService';
 export { default as inventoryService } from './inventoryService';
 
 // Re-export for convenience
+import apiService from './apiService';
+import authService from './authService';
+import storesService from './storesService';
+import shoppingListsService from './shoppingListsService';
+import recipesService from './recipesService';
+import inventoryService from './inventoryService';
+
 export {
   apiService as api,
   authService as auth,

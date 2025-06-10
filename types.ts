@@ -81,6 +81,7 @@ export interface ShoppingListItem {
   recipeSources: Array<{ recipeName: string; quantity: number }>; // From which recipe(s) and how much
   purchased: boolean;
   storeId?: string; // Optional: which store to buy from
+  notes?: string; // Optional notes for the shopping list item
 }
 
 export interface ShoppingList {
@@ -107,6 +108,10 @@ export interface UserPreferences {
   autoArchiveCompletedLists?: boolean;           // NEW: Auto-archive setting
   autoArchiveAfterDays?: number;                 // NEW: Days before auto-archive (default: 30)
   deleteArchivedAfterDays?: number;              // NEW: Days before auto-delete archived (default: 365)
+  theme?: 'light' | 'dark';                     // NEW: Theme preference
+  language?: string;                             // NEW: Language preference
+  notificationsEnabled?: boolean;                // NEW: Notifications setting
+  dietaryRestrictions?: string[];                // NEW: Dietary restrictions
 }
 
 export interface User {

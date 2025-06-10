@@ -101,7 +101,7 @@ const IngredientSegment: React.FC<IngredientSegmentProps> = ({ segment, isMobile
       ingredient={ingredient}
       scaledQuantity={ingredientMention.scaledQuantity}
       scaledUnit={scaledUnit}
-      isOptional={ingredient.isOptional}
+      isOptional={ingredient.isOptional || false}
       trigger="hover"
     >
       {ingredientContent}

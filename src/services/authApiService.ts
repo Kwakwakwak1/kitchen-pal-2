@@ -1,5 +1,5 @@
 import { apiService } from './apiService';
-import { User } from '../types';
+import { User } from '../../types';
 
 export interface LoginRequest {
   email: string;

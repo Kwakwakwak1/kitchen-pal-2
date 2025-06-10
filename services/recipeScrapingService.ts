@@ -633,7 +633,9 @@ export async function scrapeRecipeFromUrl(url: string): Promise<RecipeScrapingRe
     if (!recipeData.ingredients || recipeData.ingredients.length === 0) {
       missingFields.push('ingredients');
     }
-    if (!recipeData.instructions || recipeData.instructions.trim() === '') {
+    if (!recipeData.instructions || 
+        (typeof recipeData.instructions === 'string' && recipeData.instructions.trim() === '') ||
+        (Array.isArray(recipeData.instructions) && recipeData.instructions.length === 0)) {
       missingFields.push('instructions');
     }
 
