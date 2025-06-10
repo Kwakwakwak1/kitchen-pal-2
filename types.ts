@@ -192,6 +192,7 @@ export interface ShoppingListsContextType {
   bulkDeleteShoppingLists: (listIds: string[]) => void;           // NEW: Bulk operations
   bulkArchiveShoppingLists: (listIds: string[]) => void;          // NEW: Bulk archive
   bulkDeleteArchivedShoppingLists: (listIds: string[]) => void;   // NEW: Bulk delete archived
+  markAllItemsAsPurchased?: (listId: string) => Promise<void>;    // NEW: API provider only
 }
 
 export type ActiveView = 

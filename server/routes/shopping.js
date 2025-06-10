@@ -11,7 +11,8 @@ import {
   updateShoppingListItem,
   deleteShoppingListItem,
   bulkUpdateItems,
-  clearCheckedItems
+  clearCheckedItems,
+  purchaseAndComplete
 } from '../controllers/shoppingController.js';
 
 const router = express.Router();
@@ -343,6 +344,57 @@ router.post('/lists/:id/items/bulk-update', validate({
  *         description: Shopping list not found
  */
 router.delete('/lists/:id/items/clear-checked', validate({ params: commonSchemas.uuidParam }), clearCheckedItems);
+
+/**
+ * @swagger
+ * /api/shopping/lists/{id}/purchase-and-complete:
+ *   post:
+ *     summary: Mark items as purchased, add to inventory, and complete/archive the shopping list
+ *     tags: [Shopping List Items]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - purchased_items
+ *             properties:
+ *               purchased_items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - item_id
+ *                     - quantity
+ *                   properties:
+ *                     item_id:
+ *                       type: string
+ *                       format: uuid
+ *                     quantity:
+ *                       type: number
+ *                       minimum: 0
+ *     responses:
+ *       200:
+ *         description: Items marked as purchased and shopping list completed
+ *       404:
+ *         description: Shopping list not found
+ *       400:
+ *         description: Invalid item data
+ */
+router.post('/lists/:id/purchase-and-complete', validate({ 
+  params: commonSchemas.uuidParam, 
+  body: shoppingSchemas.purchaseAndComplete 
+}), purchaseAndComplete);
 
 /**
  * @swagger

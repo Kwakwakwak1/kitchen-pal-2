@@ -27,6 +27,8 @@ const RecipesPageAPI: React.FC = () => {
   const [showServingsModal, setShowServingsModal] = useState(false);
   const [selectedRecipeForShoppingList, setSelectedRecipeForShoppingList] = useState<Recipe | null>(null);
   const [selectedServings, setSelectedServings] = useState(1);
+  const [servingsInput, setServingsInput] = useState<{[key: string]: string}>({});
+  const [isCreatingShoppingList, setIsCreatingShoppingList] = useState<string | null>(null); // Track which recipe is creating a list
 
   // Get inventory analysis for all recipes
   const recipeAnalysisMap = useRecipeCollectionAnalysis(recipes, inventory);
@@ -55,10 +57,13 @@ const RecipesPageAPI: React.FC = () => {
 
   // Modified direct recipe to shopping list function that takes servings as parameter
   const createShoppingListWithServings = (recipe: Recipe, servings: number) => {
-    const servingsMultiplier = servings / (recipe.defaultServings || 1);
+    if (isCreatingShoppingList) return; // Prevent multiple simultaneous creations
+    
+    setIsCreatingShoppingList(recipe.id);
+    const servingsMultiplier = servings / recipe.defaultServings;
     const neededIngredients: Record<string, { totalQuantity: number; unit: Unit; defaultStoreId?: string }> = {};
 
-    (recipe.ingredients || []).forEach(ing => {
+    recipe.ingredients.forEach(ing => {
       // Skip optional ingredients by default
       if (ing.isOptional) return;
 
@@ -129,7 +134,7 @@ const RecipesPageAPI: React.FC = () => {
     // Create new shopping list
     const now = new Date();
     const listName = `Shopping List - ${recipe.name || 'Recipe'} (${servings} serving${servings !== 1 ? 's' : ''}) - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}.${now.getMilliseconds()}`;
-    const newListId = addShoppingList({
+    const tempId = addShoppingList({
       name: listName,
       items: shoppingListItems
     });
@@ -145,10 +150,39 @@ const RecipesPageAPI: React.FC = () => {
     setShowServingsModal(false);
     setSelectedRecipeForShoppingList(null);
     
-    // Optional: Navigate to the new shopping list after a brief delay
+    // Listen for the real ID and navigate to the shopping list
+    const handleShoppingListCreated = (event: CustomEvent) => {
+      if (event.detail.tempId === tempId) {
+        setIsCreatingShoppingList(null);
+        navigate(`/shopping_list_detail/${event.detail.realId}`);
+        window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+        window.removeEventListener('shoppingListError', handleShoppingListError as EventListener);
+      }
+    };
+    
+    const handleShoppingListError = (event: CustomEvent) => {
+      if (event.detail.tempId === tempId) {
+        setIsCreatingShoppingList(null);
+        setAlertMessage({
+          type: 'error',
+          message: 'Failed to create shopping list. Please try again.'
+        });
+        setTimeout(() => setAlertMessage(null), 5000);
+        window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+        window.removeEventListener('shoppingListError', handleShoppingListError as EventListener);
+      }
+    };
+    
+    window.addEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+    window.addEventListener('shoppingListError', handleShoppingListError as EventListener);
+    
+    // Fallback navigation in case the event doesn't fire (shouldn't happen, but safety net)
     setTimeout(() => {
-      navigate(`/shopping_list_detail/${newListId}`);
-    }, 1000);
+      window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+      window.removeEventListener('shoppingListError', handleShoppingListError as EventListener);
+      // If we still haven't navigated by now, go back to shopping lists page
+      navigate('/shopping_lists');
+    }, 5000);
   };
 
   const handleConfirmServings = () => {
@@ -293,8 +327,9 @@ const RecipesPageAPI: React.FC = () => {
                 variant="primary" 
                 onClick={handleConfirmServings}
                 leftIcon={<ShoppingCartIcon className="w-4 h-4" />}
+                disabled={isCreatingShoppingList !== null}
               >
-                Add to Shopping List
+                {isCreatingShoppingList === selectedRecipeForShoppingList?.id ? 'Creating...' : 'Add to Shopping List'}
               </Button>
             </div>
           </div>

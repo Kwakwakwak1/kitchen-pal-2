@@ -82,6 +82,26 @@ class ShoppingListsService {
       .then(response => response.deleted_count);
   }
 
+  // Purchase and Complete
+  async purchaseAndComplete(
+    listId: string, 
+    purchasedItems: Array<{ item_id: string; quantity: number }>
+  ): Promise<{
+    updated_items: ShoppingListItemAPI[];
+    inventory_items: any[];
+    shopping_list: ShoppingListAPI;
+    is_completed: boolean;
+  }> {
+    return apiService.post<{
+      updated_items: ShoppingListItemAPI[];
+      inventory_items: any[];
+      shopping_list: ShoppingListAPI;
+      is_completed: boolean;
+    }>(`/shopping/lists/${listId}/purchase-and-complete`, {
+      purchased_items: purchasedItems
+    });
+  }
+
   // Convenience methods
   async searchShoppingLists(query: string, options?: {
     is_active?: boolean;

@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useShoppingLists } from '../providers/ShoppingListsProviderAPI';
 import { useInventory } from '../providers/InventoryProviderAPI';
 import { useStores } from '../providers/StoresProviderAPI';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { shoppingListsService } from '../services/shoppingListsService';
 import { 
   ShoppingListItem, 
   InventoryItem 
@@ -30,11 +32,75 @@ import {
 export const ShoppingListDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { id: listId } = useParams<{ id: string }>();
-  const { getShoppingListById, updateShoppingList } = useShoppingLists();
-  const { inventory, addInventoryItem: addInvItemSystem } = useInventory(); // Renamed to avoid conflict
+  const { getShoppingListById, updateShoppingList, markAllItemsAsPurchased } = useShoppingLists();
+  const { inventory, addInventoryItem: addInvItemSystem } = useInventory();
   const { stores, getStoreById } = useStores();
+  const queryClient = useQueryClient();
   const shoppingList = getShoppingListById(listId || '');
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [alertMessage, setAlertMessage] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+  // Mutation for updating individual items
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ itemId, isPurchased }: { itemId: string; isPurchased: boolean }) => {
+      return await shoppingListsService.updateShoppingListItem(itemId, { is_purchased: isPurchased });
+    },
+    onSuccess: (response: any, { isPurchased }) => {
+      // Invalidate and refetch the shopping lists to get updated data
+      queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+      
+      // Check if response contains completion information
+      if (response && typeof response === 'object' && 'is_completed' in response && response.is_completed) {
+        setAlertMessage({
+          type: 'success',
+          message: 'Shopping list completed! All items have been purchased.'
+        });
+      }
+    },
+    onError: (error) => {
+      console.error('Error updating item:', error);
+      setAlertMessage({
+        type: 'error',
+        message: 'Failed to update item. Please try again.'
+      });
+    }
+  });
+
+  // Mutation for bulk purchasing all items and adding to inventory
+  const purchaseAndCompleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!shoppingList) throw new Error('No shopping list found');
+      
+      const unpurchasedItems = shoppingList.items.filter(item => !item.purchased);
+      const purchaseData = unpurchasedItems.map(item => ({
+        item_id: item.id,
+        quantity: item.neededQuantity
+      }));
+
+      return await shoppingListsService.purchaseAndComplete(shoppingList.id, purchaseData);
+    },
+    onSuccess: (response) => {
+      // Invalidate and refetch the shopping lists
+      queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+      
+      const itemCount = response.updated_items.length;
+      setAlertMessage({
+        type: 'success',
+        message: `${itemCount} item(s) marked as purchased and added to inventory! ${response.is_completed ? 'Shopping list completed!' : ''} Redirecting to recipes...`
+      });
+      
+      // Navigate to recipes page after brief delay
+      setTimeout(() => {
+        navigate('/recipes');
+      }, 2000);
+    },
+    onError: (error) => {
+      console.error('Error purchasing items:', error);
+      setAlertMessage({
+        type: 'error',
+        message: 'Failed to purchase items. Please try again.'
+      });
+    }
+  });
 
   if (!shoppingList) { 
     return (
@@ -81,36 +147,34 @@ export const ShoppingListDetailPage: React.FC = () => {
 
     const updatedItems = [...shoppingList.items, newShoppingListItem];
     updateShoppingList({ ...shoppingList, items: updatedItems });
-    setAlertMessage(`${invItem.ingredientName} added to the shopping list.`);
+    setAlertMessage({
+      type: 'success',
+      message: `${invItem.ingredientName} added to the shopping list.`
+    });
     setTimeout(() => setAlertMessage(null), 3000);
   };
 
-  const toggleItemPurchased = (itemId: string, currentlyPurchased: boolean) => {
-    let itemAddedToInventory = false;
-    const updatedItems = shoppingList.items.map(item => {
-      if (item.id === itemId) {
-        const newPurchasedState = !currentlyPurchased;
-        if (newPurchasedState) { 
-          addInvItemSystem({ 
-            ingredientName: item.ingredientName, 
-            quantity: item.neededQuantity, 
+  const toggleItemPurchased = async (itemId: string, currentlyPurchased: boolean) => {
+    const newPurchasedState = !currentlyPurchased;
+    
+    // If marking as purchased, also add to inventory
+    if (newPurchasedState) {
+      const item = shoppingList.items.find(i => i.id === itemId);
+      if (item) {
+        try {
+          addInvItemSystem({
+            ingredientName: item.ingredientName,
+            quantity: item.neededQuantity,
             unit: item.unit,
-            // For items purchased from SL, we don't know exp date/freq/store unless it was pre-filled
-            // This info is best updated in inventory directly.
-            // defaultStoreId: item.storeId 
-          }, true); 
-          itemAddedToInventory = true;
+          }, true);
+        } catch (error) {
+          console.error('Error adding to inventory:', error);
         }
-        return { ...item, purchased: newPurchasedState };
       }
-      return item;
-    });
-    updateShoppingList({ ...shoppingList, items: updatedItems });
-    if(itemAddedToInventory) {
-        const changedItem = shoppingList.items.find(i => i.id === itemId);
-        setAlertMessage(`${changedItem?.ingredientName} marked as purchased and added to inventory.`);
-        setTimeout(() => setAlertMessage(null), 3000);
     }
+    
+    // Update the item via API
+    updateItemMutation.mutate({ itemId, isPurchased: newPurchasedState });
   };
   
   const handleStoreChange = (itemId: string, storeId: string) => {
@@ -120,27 +184,33 @@ export const ShoppingListDetailPage: React.FC = () => {
     updateShoppingList({ ...shoppingList, items: updatedItems });
   };
 
-  const addAllPurchasedToInventory = () => {
-    let itemsAddedCount = 0;
-    const updatedItems = shoppingList.items.map(item => {
-      if (!item.purchased) {
-         addInvItemSystem({
-            ingredientName: item.ingredientName,
-            quantity: item.neededQuantity,
-            unit: item.unit
-         }, true);
-         itemsAddedCount++;
-         return {...item, purchased: true};
-      }
-      return item;
-    });
-    updateShoppingList({ ...shoppingList, items: updatedItems });
-    setAlertMessage(`${itemsAddedCount} item(s) marked as purchased and added to inventory! Redirecting to recipes...`);
+  const addAllPurchasedToInventory = async () => {
+    if (!shoppingList) return;
     
-    // Navigate to recipes page after brief delay to show updated inventory status
-    setTimeout(() => {
-      navigate('/recipes');
-    }, 2000);
+    // Try to use the provider's markAllItemsAsPurchased function first (API provider only)
+    if (markAllItemsAsPurchased) {
+      try {
+        await markAllItemsAsPurchased(shoppingList.id);
+        setAlertMessage({
+          type: 'success',
+          message: 'All items marked as purchased and added to inventory! Shopping list completed! Redirecting to recipes...'
+        });
+        
+        // Navigate to recipes page after brief delay
+        setTimeout(() => {
+          navigate('/recipes');
+        }, 2000);
+      } catch (error) {
+        console.error('Error using provider markAllItemsAsPurchased:', error);
+        setAlertMessage({
+          type: 'error',
+          message: 'Failed to purchase items. Please try again.'
+        });
+      }
+    } else {
+      // Fallback to direct mutation for non-API provider
+      purchaseAndCompleteMutation.mutate();
+    }
   };
   
   const itemsByStore: Record<string, ShoppingListItem[]> = shoppingList.items.reduce((acc, item) => {
@@ -169,7 +239,7 @@ export const ShoppingListDetailPage: React.FC = () => {
   return (
     <div className="container mx-auto p-4">
       <Button onClick={() => navigate('/shopping_lists')} variant="ghost" leftIcon={<ArrowLeftIcon />} className="mb-6">Back to Shopping Lists</Button>
-      {alertMessage && <Alert type="success" message={alertMessage} onClose={() => setAlertMessage(null)} />}
+      {alertMessage && <Alert type={alertMessage.type} message={alertMessage.message} onClose={() => setAlertMessage(null)} />}
       <h2 className="text-3xl font-bold text-gray-800 mb-2">{shoppingList.name}</h2>
       <p className="text-sm text-gray-500 mb-6">Created: {new Date(shoppingList.createdAt).toLocaleDateString()}</p>
       

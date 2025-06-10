@@ -69,9 +69,12 @@ const RecipeDetailPageAPI: React.FC = () => {
   };
 
   // Direct shopping list creation for current serving size
+  const [isCreatingShoppingList, setIsCreatingShoppingList] = useState(false);
+  
   const handleAddToShoppingList = () => {
-    if (!recipe) return;
+    if (!recipe || isCreatingShoppingList) return;
 
+    setIsCreatingShoppingList(true);
     const servingsMultiplier = currentServings / recipe.defaultServings;
     const neededIngredients: Record<string, { totalQuantity: number; unit: Unit; defaultStoreId?: string }> = {};
 
@@ -146,7 +149,7 @@ const RecipeDetailPageAPI: React.FC = () => {
     // Create new shopping list
     const now = new Date();
     const listName = `Shopping List - ${recipe.name} (${currentServings} serving${currentServings !== 1 ? 's' : ''}) - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}.${now.getMilliseconds()}`;
-    const newListId = addShoppingList({
+    const tempId = addShoppingList({
       name: listName,
       items: shoppingListItems
     });
@@ -158,10 +161,39 @@ const RecipeDetailPageAPI: React.FC = () => {
     });
     setTimeout(() => setAlertMessage(null), 3000);
     
-    // Navigate to the new shopping list
+    // Listen for the real ID and navigate to the shopping list
+    const handleShoppingListCreated = (event: CustomEvent) => {
+      if (event.detail.tempId === tempId) {
+        setIsCreatingShoppingList(false);
+        navigate(`/shopping_list_detail/${event.detail.realId}`);
+        window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+        window.removeEventListener('shoppingListError', handleShoppingListError as EventListener);
+      }
+    };
+    
+    const handleShoppingListError = (event: CustomEvent) => {
+      if (event.detail.tempId === tempId) {
+        setIsCreatingShoppingList(false);
+        setAlertMessage({
+          type: 'error',
+          message: 'Failed to create shopping list. Please try again.'
+        });
+        setTimeout(() => setAlertMessage(null), 5000);
+        window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+        window.removeEventListener('shoppingListError', handleShoppingListError as EventListener);
+      }
+    };
+    
+    window.addEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+    window.addEventListener('shoppingListError', handleShoppingListError as EventListener);
+    
+    // Fallback navigation in case the event doesn't fire (shouldn't happen, but safety net)
     setTimeout(() => {
-      navigate(`/shopping_list_detail/${newListId}`);
-    }, 1000);
+      window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
+      window.removeEventListener('shoppingListError', handleShoppingListError as EventListener);
+      // If we still haven't navigated by now, go back to shopping lists page
+      navigate('/shopping_lists');
+    }, 5000);
   };
 
   const handlePrepareClick = () => {
@@ -371,11 +403,13 @@ const RecipeDetailPageAPI: React.FC = () => {
                 Prepare this Recipe
               </Button>
               <Button 
-                variant="primary" 
-                onClick={handleAddToShoppingList}
-                leftIcon={<ShoppingCartIcon />}
+                onClick={handleAddToShoppingList} 
+                variant="secondary" 
+                leftIcon={<ShoppingCartIcon className="w-5 h-5" />}
+                className="flex-1"
+                disabled={isCreatingShoppingList}
               >
-                Add to Shopping List
+                {isCreatingShoppingList ? 'Creating...' : 'Add to Shopping List'}
               </Button>
             </div>
           </div>
