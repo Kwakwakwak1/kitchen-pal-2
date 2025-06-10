@@ -144,7 +144,8 @@ const RecipeDetailPageAPI: React.FC = () => {
     }
     
     // Create new shopping list
-    const listName = `Shopping List - ${recipe.name} (${currentServings} serving${currentServings !== 1 ? 's' : ''}) - ${new Date().toLocaleDateString()}`;
+    const now = new Date();
+    const listName = `Shopping List - ${recipe.name} (${currentServings} serving${currentServings !== 1 ? 's' : ''}) - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}.${now.getMilliseconds()}`;
     const newListId = addShoppingList({
       name: listName,
       items: shoppingListItems

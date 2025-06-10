@@ -1528,7 +1528,8 @@ const RecipesPage: React.FC = () => {
     }
     
     // Create new shopping list
-    const listName = `Shopping List - ${recipe.name} (${servings} serving${servings !== 1 ? 's' : ''}) - ${new Date().toLocaleDateString()}`;
+    const now = new Date();
+    const listName = `Shopping List - ${recipe.name} (${servings} serving${servings !== 1 ? 's' : ''}) - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
     const newListId = addShoppingList({
       name: listName,
       items: shoppingListItems
@@ -2394,7 +2395,8 @@ const ShoppingListGeneratorPage: React.FC = () => {
     });
     
     if (shoppingListItems.length > 0) {
-        const listName = `Shopping List - ${new Date().toLocaleDateString()}`;
+        const now = new Date();
+        const listName = `Shopping List - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
         const newListId = addShoppingList({ name: listName, items: shoppingListItems });
         setActiveView('shopping_list_detail', {id: newListId});
     } else {

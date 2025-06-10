@@ -143,7 +143,8 @@ const ShoppingListGeneratorPageAPI: React.FC = () => {
       });
       
       if (shoppingListItems.length > 0) {
-        const listName = `Shopping List - ${new Date().toLocaleDateString()}`;
+        const now = new Date();
+        const listName = `Shopping List - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}.${now.getMilliseconds()}`;
         const newListId = addShoppingList({ name: listName, items: shoppingListItems });
         
         // Listen for the real ID to be available

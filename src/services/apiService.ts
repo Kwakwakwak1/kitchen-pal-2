@@ -126,12 +126,19 @@ class ApiService {
         
         if (tokenData.expiresAt > now + buffer) {
           this.tokenData = tokenData;
+          console.log('API Service: Token loaded successfully, expires in', (tokenData.expiresAt - now) / 60000, 'minutes');
         } else {
+          console.warn('API Service: Token expired or expiring soon, attempting refresh...');
+          // Set the token temporarily to allow refresh call
+          this.tokenData = tokenData;
           // Token is expired or about to expire, try to refresh
           this.refreshToken().catch(() => {
+            console.warn('API Service: Token refresh failed, clearing tokens');
             this.clearTokens();
           });
         }
+      } else {
+        console.log('API Service: No tokens found in storage');
       }
     } catch (error) {
       console.warn('Failed to load tokens from storage:', error);
@@ -199,6 +206,27 @@ class ApiService {
 
   // URL builder helper
   buildURL(endpoint: string, params?: Record<string, any>): string {
+    // For same-origin requests (production), build URL manually
+    if (!this.baseURL) {
+      let url = endpoint; // Don't add /api since the client already has it configured
+      
+      if (params) {
+        const searchParams = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            searchParams.append(key, String(value));
+          }
+        });
+        
+        if (searchParams.toString()) {
+          url += `?${searchParams.toString()}`;
+        }
+      }
+      
+      return url;
+    }
+    
+    // For cross-origin requests (development), use URL constructor
     const url = new URL(endpoint, `${this.baseURL}/api`);
     
     if (params) {
@@ -209,7 +237,7 @@ class ApiService {
       });
     }
     
-    return url.pathname + url.search;
+    return url.toString();
   }
 }
 

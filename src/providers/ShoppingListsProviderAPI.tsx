@@ -11,13 +11,8 @@ interface ShoppingListsProviderProps {
 }
 
 // Transform functions
-const transformShoppingListFromAPI = (apiList: ShoppingListAPI, items: ShoppingListItemAPI[] = []): ShoppingList => ({
-  id: apiList.id,
-  name: apiList.name,
-  createdAt: apiList.created_at,
-  status: apiList.is_active ? ShoppingListStatus.ACTIVE : ShoppingListStatus.ARCHIVED,
-  archivedAt: !apiList.is_active ? apiList.updated_at : undefined,
-  items: items.map(item => ({
+const transformShoppingListFromAPI = (apiList: ShoppingListAPI, items: ShoppingListItemAPI[] = []): ShoppingList => {
+  const transformedItems = items.map(item => ({
     id: item.id,
     ingredientName: item.ingredient_name,
     neededQuantity: typeof item.quantity === 'string' ? parseFloat(item.quantity) || 0 : item.quantity || 0,
@@ -25,26 +20,66 @@ const transformShoppingListFromAPI = (apiList: ShoppingListAPI, items: ShoppingL
     recipeSources: [], // Not supported in current API
     purchased: item.is_purchased,
     notes: item.notes,
-  })),
-});
+  }));
+
+  // Determine status based on is_active and completion state
+  let status: ShoppingListStatus;
+  if (!apiList.is_active) {
+    status = ShoppingListStatus.ARCHIVED;
+  } else {
+    // Check if all items are purchased to determine if list is completed
+    const isCompleted = transformedItems.length > 0 && transformedItems.every(item => item.purchased);
+    status = isCompleted ? ShoppingListStatus.COMPLETED : ShoppingListStatus.ACTIVE;
+  }
+
+  return {
+    id: apiList.id,
+    name: apiList.name,
+    createdAt: apiList.created_at,
+    status,
+    completedAt: status === ShoppingListStatus.COMPLETED ? apiList.updated_at : undefined,
+    archivedAt: !apiList.is_active ? apiList.updated_at : undefined,
+    items: transformedItems,
+  };
+};
 
 export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
 
   // Queries
-  const { data: activeShoppingLists = [] } = useQuery({
+  const { data: activeShoppingLists = [], error: activeListsError } = useQuery({
     queryKey: ['shoppingLists', 'active'],
     queryFn: async () => {
-      const response = await shoppingListsService.getActiveShoppingLists();
-      return Promise.all(
-        response.map(async (list) => {
-          const itemsResponse = await shoppingListsService.getShoppingListItems(list.id);
-          return transformShoppingListFromAPI(list, itemsResponse.items);
-        })
-      );
+      console.log('ShoppingListsProvider: Fetching active shopping lists...');
+      try {
+        const response = await shoppingListsService.getActiveShoppingLists();
+        console.log('ShoppingListsProvider: Got active lists:', response.length);
+        
+        const transformedLists = await Promise.all(
+          response.map(async (list) => {
+            console.log(`ShoppingListsProvider: Fetching items for list: ${list.name}`);
+            const itemsResponse = await shoppingListsService.getShoppingListItems(list.id);
+            console.log(`ShoppingListsProvider: Got ${itemsResponse.items.length} items for ${list.name}`);
+            return transformShoppingListFromAPI(list, itemsResponse.items);
+          })
+        );
+        
+        console.log('ShoppingListsProvider: Successfully transformed', transformedLists.length, 'lists');
+        return transformedLists;
+      } catch (error) {
+        console.error('ShoppingListsProvider: Error fetching active lists:', error);
+        throw error;
+      }
     },
     staleTime: 2 * 60 * 1000, // 2 minutes
   });
+
+  // Log any query errors
+  React.useEffect(() => {
+    if (activeListsError) {
+      console.error('ShoppingListsProvider: Active lists query error:', activeListsError);
+    }
+  }, [activeListsError]);
 
   const { data: archivedShoppingLists = [] } = useQuery({
     queryKey: ['shoppingLists', 'archived'],
@@ -99,7 +134,7 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
     mutationFn: async (list: ShoppingList) => {
       const updatedList = await shoppingListsService.updateShoppingList(list.id, {
         name: list.name,
-        is_active: list.status === ShoppingListStatus.ACTIVE,
+        is_active: list.status === ShoppingListStatus.ACTIVE || list.status === ShoppingListStatus.COMPLETED,
       });
       
       // Get current items and update them
@@ -129,20 +164,20 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
       return transformShoppingListFromAPI(updatedList, finalItemsResponse.items);
     },
     onSuccess: (updatedList, originalList) => {
-      const isActiveList = updatedList.status === ShoppingListStatus.ACTIVE;
-      const wasActiveList = originalList.status === ShoppingListStatus.ACTIVE;
+      const isActiveOrCompleted = updatedList.status === ShoppingListStatus.ACTIVE || updatedList.status === ShoppingListStatus.COMPLETED;
+      const wasActiveOrCompleted = originalList.status === ShoppingListStatus.ACTIVE || originalList.status === ShoppingListStatus.COMPLETED;
       
-      if (isActiveList && wasActiveList) {
+      if (isActiveOrCompleted && wasActiveOrCompleted) {
         // Update in active lists
         queryClient.setQueryData(['shoppingLists', 'active'], (oldLists: ShoppingList[] = []) =>
           oldLists.map(l => l.id === updatedList.id ? updatedList : l)
         );
-      } else if (!isActiveList && !wasActiveList) {
+      } else if (!isActiveOrCompleted && !wasActiveOrCompleted) {
         // Update in archived lists
         queryClient.setQueryData(['shoppingLists', 'archived'], (oldLists: ShoppingList[] = []) =>
           oldLists.map(l => l.id === updatedList.id ? updatedList : l)
         );
-      } else if (isActiveList && !wasActiveList) {
+      } else if (isActiveOrCompleted && !wasActiveOrCompleted) {
         // Move from archived to active
         queryClient.setQueryData(['shoppingLists', 'archived'], (oldLists: ShoppingList[] = []) =>
           oldLists.filter(l => l.id !== updatedList.id)
@@ -212,9 +247,11 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
   const unarchiveShoppingList = (listId: string): void => {
     const list = [...activeShoppingLists, ...archivedShoppingLists].find(l => l.id === listId);
     if (list) {
+      // Determine if it should be ACTIVE or COMPLETED based on items' purchased state
+      const isCompleted = list.items.length > 0 && list.items.every(item => item.purchased);
       const unarchivedList: ShoppingList = {
         ...list,
-        status: ShoppingListStatus.ACTIVE,
+        status: isCompleted ? ShoppingListStatus.COMPLETED : ShoppingListStatus.ACTIVE,
         archivedAt: undefined,
       };
       updateShoppingList(unarchivedList);

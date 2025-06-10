@@ -115,7 +115,7 @@ const AppLayoutAPI: React.FC = () => {
                   ))}
                   <div className="relative group">
                      <button 
-                        onClick={() => setActiveView('profile')}
+                        onClick={() => navigate('/profile')}
                         className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                         aria-label="User Profile"
                       >
@@ -253,19 +253,32 @@ const AppLayoutAPI: React.FC = () => {
   );
 };
 
-// Always provide all providers to avoid hook errors
+// Only provide data providers when user is authenticated
 const AuthenticatedProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  return (
-    <StoresProviderAPI>
-      <ShoppingListsProviderAPI>
-        <RecipesProviderAPI>
-          <InventoryProviderAPI>
-            {children}
-          </InventoryProviderAPI>
-        </RecipesProviderAPI>
-      </ShoppingListsProviderAPI>
-    </StoresProviderAPI>
-  );
+  const { currentUser, isLoadingAuth } = useAuth();
+  
+  // Don't mount data providers until we know auth status
+  if (isLoadingAuth) {
+    return <>{children}</>;
+  }
+  
+  // Only mount data providers for authenticated users
+  if (currentUser) {
+    return (
+      <StoresProviderAPI>
+        <ShoppingListsProviderAPI>
+          <RecipesProviderAPI>
+            <InventoryProviderAPI>
+              {children}
+            </InventoryProviderAPI>
+          </RecipesProviderAPI>
+        </ShoppingListsProviderAPI>
+      </StoresProviderAPI>
+    );
+  }
+  
+  // For unauthenticated users, just return children without data providers
+  return <>{children}</>;
 };
 
 const AppAPI: React.FC = () => {
