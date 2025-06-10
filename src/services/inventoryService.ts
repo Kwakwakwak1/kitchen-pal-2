@@ -7,7 +7,7 @@ interface InventoryItemAPI {
   quantity: number;
   unit: string;
   low_stock_threshold?: number;
-  expiration_date?: string;
+  expiry_date?: string;
   location?: string;
   brand?: string;
   notes?: string;
@@ -20,7 +20,7 @@ interface CreateInventoryItemRequest {
   quantity: number;
   unit: string;
   low_stock_threshold?: number;
-  expiration_date?: string;
+  expiry_date?: string;
   location?: string;
   brand?: string;
   notes?: string;
@@ -30,7 +30,7 @@ interface UpdateInventoryItemRequest extends Partial<CreateInventoryItemRequest>
 
 interface InventoryResponse {
   inventory: InventoryItemAPI[];
-  count: number;
+  count?: number;
   pagination?: {
     page: number;
     limit: number;
@@ -42,7 +42,7 @@ interface InventoryResponse {
 interface InventorySearchParams {
   search?: string;
   location?: string;
-  sortBy?: 'name' | 'quantity' | 'expiration_date' | 'created_at';
+  sortBy?: 'name' | 'quantity' | 'expiry_date' | 'created_at';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -55,15 +55,15 @@ class InventoryService {
   }
 
   async getInventoryItemById(id: string): Promise<InventoryItemAPI> {
-    return apiService.get<{ item: InventoryItemAPI }>(`/inventory/${id}`).then(response => response.item);
+    return apiService.get<{ inventory_item: InventoryItemAPI }>(`/inventory/${id}`).then(response => response.inventory_item);
   }
 
   async createInventoryItem(data: CreateInventoryItemRequest): Promise<InventoryItemAPI> {
-    return apiService.post<{ item: InventoryItemAPI }>('/inventory', data).then(response => response.item);
+    return apiService.post<{ inventory_item: InventoryItemAPI }>('/inventory', data).then(response => response.inventory_item);
   }
 
   async updateInventoryItem(id: string, data: UpdateInventoryItemRequest): Promise<InventoryItemAPI> {
-    return apiService.put<{ item: InventoryItemAPI }>(`/inventory/${id}`, data).then(response => response.item);
+    return apiService.put<{ inventory_item: InventoryItemAPI }>(`/inventory/${id}`, data).then(response => response.inventory_item);
   }
 
   async deleteInventoryItem(id: string): Promise<void> {
@@ -71,12 +71,12 @@ class InventoryService {
   }
 
   async getLowStockItems(): Promise<InventoryItemAPI[]> {
-    return apiService.get<{ items: InventoryItemAPI[] }>('/inventory/low-stock').then(response => response.items);
+    return apiService.get<{ low_stock_items: InventoryItemAPI[] }>('/inventory/low-stock').then(response => response.low_stock_items);
   }
 
   async searchInventory(query: string, options?: {
     location?: string;
-    sortBy?: 'name' | 'quantity' | 'expiration_date' | 'created_at';
+    sortBy?: 'name' | 'quantity' | 'expiry_date' | 'created_at';
     sortOrder?: 'asc' | 'desc';
   }): Promise<InventoryItemAPI[]> {
     const params = {

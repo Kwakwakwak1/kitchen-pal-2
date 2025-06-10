@@ -24,7 +24,7 @@ import RecipesPageAPI from './src/pages/recipes/RecipesPageAPI';
 import RecipeDetailPageAPI from './src/pages/recipes/RecipeDetailPageAPI';
 import ShoppingListsPageAPI from './src/pages/shopping-lists/ShoppingListsPageAPI';
 import ShoppingListGeneratorPageAPI from './src/pages/shopping-lists/ShoppingListGeneratorPageAPI';
-// import InventoryPage from './src/pages/inventory/InventoryPage'; // TODO: Convert to API
+import InventoryPageAPI from './src/pages/inventory/InventoryPageAPI';
 
 // Import UI components and utilities
 import { Button, SearchInput } from './components';
@@ -40,16 +40,7 @@ import { ActiveView } from './types';
 import { useAuth } from './src/providers/AuthProviderAPI';
 import { useAppState } from './src/providers/AppStateProvider';
 
-// Temporary placeholder pages until we convert the main pages
-const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => (
-  <div className="container mx-auto p-4">
-    <div className="text-center py-12">
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">{title}</h1>
-      <p className="text-gray-600 mb-6">This page is being converted to work with the API backend.</p>
-      <p className="text-sm text-gray-500">Coming soon...</p>
-    </div>
-  </div>
-);
+// Note: PlaceholderPage removed - no longer needed since inventory is now API-integrated
 
 // AppLayout component - mirrors the one from App.tsx but for API version
 const AppLayoutAPI: React.FC = () => {
@@ -75,17 +66,7 @@ const AppLayoutAPI: React.FC = () => {
     }
   }, [location.pathname]);
   
-  // Enhanced setActiveView that also handles navigation
-  const navigateToView = (view: ActiveView, params?: Record<string, string>): void => {
-    setActiveView(view, params);
-    if (view === 'recipe_detail' && params?.id) {
-      navigate(`/recipe_detail/${params.id}`);
-    } else if (view === 'shopping_list_detail' && params?.id) {
-      navigate(`/shopping_list_detail/${params.id}`);
-    } else {
-      navigate(`/${view}`);
-    }
-  };
+  // Note: navigateToView removed - navigation handled through Link components
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -250,7 +231,7 @@ const AppLayoutAPI: React.FC = () => {
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/recipes" element={<ProtectedRoute><RecipesPageAPI /></ProtectedRoute>} />
           <Route path="/recipe_detail/:id" element={<ProtectedRoute><RecipeDetailPageAPI /></ProtectedRoute>} />
-          <Route path="/inventory" element={<ProtectedRoute><PlaceholderPage title="Inventory" /></ProtectedRoute>} />
+          <Route path="/inventory" element={<ProtectedRoute><InventoryPageAPI /></ProtectedRoute>} />
           <Route path="/shopping_lists" element={<ProtectedRoute><ShoppingListsPageAPI /></ProtectedRoute>} />
           <Route path="/shopping_list_detail/:id" element={<ProtectedRoute><ShoppingListDetailPage /></ProtectedRoute>} />
           <Route path="/generate_shopping_list" element={<ProtectedRoute><ShoppingListGeneratorPageAPI /></ProtectedRoute>} />

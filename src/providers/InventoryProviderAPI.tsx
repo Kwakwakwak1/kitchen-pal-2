@@ -17,7 +17,7 @@ const transformInventoryItemFromAPI = (apiItem: any): InventoryItem => ({
   quantity: apiItem.quantity,
   unit: apiItem.unit as Unit,
   lowStockThreshold: apiItem.low_stock_threshold,
-  expirationDate: apiItem.expiration_date,
+  expirationDate: apiItem.expiry_date,
   frequencyOfUse: FrequencyOfUse.OTHER, // Default since API doesn't have this field yet
   defaultStoreId: undefined, // Not supported in current API
 });
@@ -50,7 +50,7 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
         const updatedItem = await inventoryService.updateInventoryItem(existingItem.id, {
           quantity: existingItem.quantity + item.quantity,
           low_stock_threshold: item.lowStockThreshold !== undefined ? item.lowStockThreshold : existingItem.lowStockThreshold,
-          expiration_date: item.expirationDate || existingItem.expirationDate,
+          expiry_date: item.expirationDate || existingItem.expirationDate,
         });
         return { item: transformInventoryItemFromAPI(updatedItem), isUpdate: true };
       } else {
@@ -60,7 +60,7 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
           quantity: item.quantity,
           unit: item.unit,
           low_stock_threshold: item.lowStockThreshold,
-          expiration_date: item.expirationDate,
+          expiry_date: item.expirationDate,
         });
         return { item: transformInventoryItemFromAPI(newItem), isUpdate: false };
       }
@@ -86,7 +86,7 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
         quantity: item.quantity,
         unit: item.unit,
         low_stock_threshold: item.lowStockThreshold,
-        expiration_date: item.expirationDate,
+        expiry_date: item.expirationDate,
       });
       return transformInventoryItemFromAPI(updatedItem);
     },
