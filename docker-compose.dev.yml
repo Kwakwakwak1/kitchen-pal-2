@@ -1,0 +1,24 @@
+services:
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: kitchen-pal-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kitchen_pal_dev
+      POSTGRES_USER: kitchen_pal_user
+      POSTGRES_PASSWORD: kitchen_pal_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kitchen_pal_user -d kitchen_pal_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data_dev:
+    driver: local
