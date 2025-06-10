@@ -1,4 +1,5 @@
 import React, { useState, ChangeEvent, FocusEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Unit, ShoppingListItem } from '../../../types';
 import { useRecipes } from '../../providers/RecipesProviderAPI';
 import { useInventory } from '../../providers/InventoryProviderAPI';
@@ -15,10 +16,11 @@ interface SelectedOptionalIngredients {
 }
 
 const ShoppingListGeneratorPageAPI: React.FC = () => {
+  const navigate = useNavigate();
   const { recipes, getRecipeById } = useRecipes();
   const { getInventoryItemByName } = useInventory();
   const { addShoppingList } = useShoppingLists();
-  const { setActiveView, viewParams, searchTerm } = useAppState();
+  const { viewParams, searchTerm } = useAppState();
   
   const initialRecipeIds = viewParams.recipeIds ? viewParams.recipeIds.split(',') : [];
   const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>(initialRecipeIds);
@@ -147,7 +149,7 @@ const ShoppingListGeneratorPageAPI: React.FC = () => {
         // Listen for the real ID to be available
         const handleShoppingListCreated = (event: CustomEvent) => {
           if (event.detail.tempId === newListId) {
-            setActiveView('shopping_list_detail', { id: event.detail.realId });
+            navigate(`/shopping_list_detail/${event.detail.realId}`);
             window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
           }
         };
@@ -156,12 +158,12 @@ const ShoppingListGeneratorPageAPI: React.FC = () => {
         
         // Fallback in case the event doesn't fire
         setTimeout(() => {
-          setActiveView('shopping_lists');
+          navigate('/shopping_lists');
           window.removeEventListener('shoppingListCreated', handleShoppingListCreated as EventListener);
         }, 2000);
       } else {
         alert("Nothing to buy! Your inventory covers all selected recipe needs, or no recipes were selected.");
-        setActiveView('recipes');
+        navigate('/recipes');
       }
     } catch (error) {
       console.error('Error generating shopping list:', error);
@@ -177,7 +179,7 @@ const ShoppingListGeneratorPageAPI: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4">
-      <Button onClick={() => setActiveView('recipes')} variant="ghost" leftIcon={<ArrowLeftIcon />} className="mb-6">Back to Recipes</Button>
+      <Button onClick={() => navigate('/recipes')} variant="ghost" leftIcon={<ArrowLeftIcon />} className="mb-6">Back to Recipes</Button>
       <h2 className="text-2xl font-semibold mb-6 text-gray-800">Generate Shopping List</h2>
       
       <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -188,7 +190,7 @@ const ShoppingListGeneratorPageAPI: React.FC = () => {
                 icon={<BookOpenIcon />}
                 title="No Recipes Available"
                 message="Add some recipes first to generate a shopping list."
-                actionButton={<Button onClick={() => setActiveView('recipes')} leftIcon={<PlusIcon/>}>Go to Recipes</Button>}
+                actionButton={<Button onClick={() => navigate('/recipes')} leftIcon={<PlusIcon/>}>Go to Recipes</Button>}
             />
         ) : filteredRecipes.length === 0 && searchTerm !== '' ? (
             <EmptyState

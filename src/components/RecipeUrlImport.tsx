@@ -6,7 +6,7 @@ interface RecipeUrlImportProps {
   onCancel: () => void;
 }
 
-export const RecipeUrlImport: React.FC<RecipeUrlImportProps> = ({ onImport, onCancel }) => {
+export const RecipeUrlImport: React.FC<RecipeUrlImportProps> = ({ onImport: _onImport, onCancel }) => {
   return (
     <div>
       <p>RecipeUrlImport component - TODO: Implement URL import functionality</p>

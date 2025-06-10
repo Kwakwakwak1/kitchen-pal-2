@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useShoppingLists } from '../providers/ShoppingListsProviderAPI';
 import { useInventory } from '../providers/InventoryProviderAPI';
 import { useStores } from '../providers/StoresProviderAPI';
-import { useAppState } from '../providers/AppStateProvider';
 import { 
   ShoppingListItem, 
   InventoryItem 
@@ -28,12 +28,12 @@ import {
 } from '../../constants';
 
 export const ShoppingListDetailPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { id: listId } = useParams<{ id: string }>();
   const { getShoppingListById, updateShoppingList } = useShoppingLists();
   const { inventory, addInventoryItem: addInvItemSystem } = useInventory(); // Renamed to avoid conflict
   const { stores, getStoreById } = useStores();
-  const { setActiveView, viewParams } = useAppState();
-  const listId = viewParams.id || '';
-  const shoppingList = getShoppingListById(listId);
+  const shoppingList = getShoppingListById(listId || '');
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   if (!shoppingList) { 
@@ -43,7 +43,7 @@ export const ShoppingListDetailPage: React.FC = () => {
             icon={<ShoppingCartIcon />}
             title="Shopping List Not Found"
             message="The shopping list you are looking for does not exist or may have been removed."
-            actionButton={<Button onClick={() => setActiveView('shopping_lists')} variant="primary">Back to Shopping Lists</Button>}
+            actionButton={<Button onClick={() => navigate('/shopping_lists')} variant="primary">Back to Shopping Lists</Button>}
         />
       </div>
     );
@@ -139,7 +139,7 @@ export const ShoppingListDetailPage: React.FC = () => {
     
     // Navigate to recipes page after brief delay to show updated inventory status
     setTimeout(() => {
-      setActiveView('recipes');
+      navigate('/recipes');
     }, 2000);
   };
   
@@ -168,7 +168,7 @@ export const ShoppingListDetailPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4">
-      <Button onClick={() => setActiveView('shopping_lists')} variant="ghost" leftIcon={<ArrowLeftIcon />} className="mb-6">Back to Shopping Lists</Button>
+      <Button onClick={() => navigate('/shopping_lists')} variant="ghost" leftIcon={<ArrowLeftIcon />} className="mb-6">Back to Shopping Lists</Button>
       {alertMessage && <Alert type="success" message={alertMessage} onClose={() => setAlertMessage(null)} />}
       <h2 className="text-3xl font-bold text-gray-800 mb-2">{shoppingList.name}</h2>
       <p className="text-sm text-gray-500 mb-6">Created: {new Date(shoppingList.createdAt).toLocaleDateString()}</p>

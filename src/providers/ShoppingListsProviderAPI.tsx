@@ -20,7 +20,7 @@ const transformShoppingListFromAPI = (apiList: ShoppingListAPI, items: ShoppingL
   items: items.map(item => ({
     id: item.id,
     ingredientName: item.ingredient_name,
-    neededQuantity: item.quantity || 0,
+    neededQuantity: typeof item.quantity === 'string' ? parseFloat(item.quantity) || 0 : item.quantity || 0,
     unit: (item.unit as Unit) || Unit.PIECE,
     recipeSources: [], // Not supported in current API
     purchased: item.is_purchased,
@@ -74,7 +74,7 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
           list.items.map(item =>
             shoppingListsService.addShoppingListItem(newList.id, {
               ingredient_name: item.ingredientName,
-              quantity: item.neededQuantity,
+              quantity: typeof item.neededQuantity === 'string' ? parseFloat(item.neededQuantity) : item.neededQuantity,
               unit: item.unit,
               notes: item.notes,
             })
@@ -117,7 +117,7 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
           list.items.map(item =>
             shoppingListsService.addShoppingListItem(list.id, {
               ingredient_name: item.ingredientName,
-              quantity: item.neededQuantity,
+              quantity: typeof item.neededQuantity === 'string' ? parseFloat(item.neededQuantity) : item.neededQuantity,
               unit: item.unit,
               notes: item.notes,
             })

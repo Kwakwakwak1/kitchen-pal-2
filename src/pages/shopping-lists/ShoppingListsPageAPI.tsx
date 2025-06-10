@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ShoppingList, ShoppingListStatus } from '../../../types';
 import { useShoppingLists } from '../../providers/ShoppingListsProviderAPI';
 import { useAppState } from '../../providers/AppStateProvider';
@@ -9,6 +10,7 @@ import {
 import { Modal, Button, Card, EmptyState } from '../../../components';
 
 const ShoppingListsPageAPI: React.FC = () => {
+  const navigate = useNavigate();
   const { 
     shoppingLists, 
     archivedShoppingLists, 
@@ -20,7 +22,7 @@ const ShoppingListsPageAPI: React.FC = () => {
     bulkArchiveShoppingLists, 
     bulkDeleteArchivedShoppingLists 
   } = useShoppingLists();
-  const { setActiveView, searchTerm } = useAppState();
+  const { searchTerm } = useAppState();
   
   type ShoppingListTab = 'active' | 'completed' | 'archived';
   const [activeTab, setActiveTab] = useState<ShoppingListTab>('active');
@@ -117,7 +119,7 @@ const ShoppingListsPageAPI: React.FC = () => {
     return (
       <Card 
         key={list.id} 
-        onClick={() => selectionMode ? handleListSelection(list.id) : setActiveView('shopping_list_detail', {id: list.id})} 
+        onClick={() => selectionMode ? handleListSelection(list.id) : navigate(`/shopping_list_detail/${list.id}`)} 
         className={`hover:bg-gray-50 cursor-pointer transition-colors ${isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}
       >
         <div className="flex items-center justify-between">
@@ -263,7 +265,7 @@ const ShoppingListsPageAPI: React.FC = () => {
             </Button>
           )}
           <Button 
-            onClick={() => setActiveView('generate_shopping_list')} 
+            onClick={() => navigate('/generate_shopping_list')} 
             leftIcon={<PlusIcon/>}
           >
             New List
@@ -321,7 +323,7 @@ const ShoppingListsPageAPI: React.FC = () => {
           }
           actionButton={
             activeTab === 'active' ? (
-              <Button onClick={() => setActiveView('generate_shopping_list')} leftIcon={<PlusIcon/>}>
+              <Button onClick={() => navigate('/generate_shopping_list')} leftIcon={<PlusIcon/>}>
                 Generate New List
               </Button>
             ) : undefined

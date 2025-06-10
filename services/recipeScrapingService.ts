@@ -114,6 +114,9 @@ async function fetchHtmlContent(url: string): Promise<{ html: string; finalUrl: 
       const response = await fetch(proxyUrl, fetchOptions);
       console.log(`✅ Fetch completed with status: ${response.status}`);
       
+      // Clear timeout since request succeeded
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         
@@ -185,10 +188,10 @@ async function fetchHtmlContent(url: string): Promise<{ html: string; finalUrl: 
       } catch (error) {
       lastError = error as Error;
       const proxyName = proxy.split('?')[0].split('/').pop() || proxy.split('?')[0];
-      console.warn(`Failed to fetch via proxy ${proxyName}:`, error.message);
+      console.warn(`Failed to fetch via proxy ${proxyName}:`, (error as Error).message);
       
       // If it's a timeout or abort error, mention it specifically
-      if (error.name === 'AbortError' || error.message.includes('timeout')) {
+      if ((error as Error).name === 'AbortError' || (error as Error).message.includes('timeout')) {
         lastError = new Error(`Request timed out via ${proxyName} - website may be slow or unreachable`);
       }
       
@@ -261,7 +264,7 @@ function extractJsonLdRecipe(html: string, sourceUrl: string): ScrapedRecipeData
             
             if (obj['@type'] === 'Recipe') return obj;
             
-            for (const [key, value] of Object.entries(obj)) {
+            for (const [_key, value] of Object.entries(obj)) {
               if (typeof value === 'object' && value !== null) {
                 const found = findRecipe(value);
                 if (found) return found;
@@ -380,7 +383,7 @@ function parseRecipeFromJsonLd(recipe: any, sourceUrl: string): ScrapedRecipeDat
         if (hours > 0) {
           return `${hours} hour${hours > 1 ? 's' : ''}${minutes > 0 ? ` ${minutes} minutes` : ''}`;
         } else {
-          return `${minutes} minutes`;
+          return `${totalMinutes} minutes`;
         }
       }
       return duration;

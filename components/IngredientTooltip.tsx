@@ -12,7 +12,7 @@ interface IngredientTooltipProps {
 
 export const IngredientTooltip: React.FC<IngredientTooltipProps> = ({
   ingredient,
-  scaledQuantity,
+  scaledQuantity: _scaledQuantity,
   scaledUnit,
   isOptional,
   trigger,
@@ -29,7 +29,6 @@ export const IngredientTooltip: React.FC<IngredientTooltipProps> = ({
     const triggerRect = triggerRef.current.getBoundingClientRect();
     const tooltipRect = tooltipRef.current.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
 
     let top = triggerRect.top - tooltipRect.height - 8; // 8px gap
     let left = triggerRect.left + (triggerRect.width / 2) - (tooltipRect.width / 2);
