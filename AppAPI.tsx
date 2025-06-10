@@ -35,7 +35,8 @@ import { useAppState } from './src/providers/AppStateProvider';
 
 // TODO: Import these pages when they're converted to work with API providers
 // import RecipesPage from './src/pages/recipes/RecipesPage';
-// import RecipeDetailPage from './src/pages/recipes/RecipeDetailPage';
+import RecipesPageAPI from './src/pages/recipes/RecipesPageAPI';
+import RecipeDetailPageAPI from './src/pages/recipes/RecipeDetailPageAPI';
 // import InventoryPage from './src/pages/inventory/InventoryPage';
 // import ShoppingListsPage from './src/pages/shopping-lists/ShoppingListsPage';
 // import ShoppingListGeneratorPage from './src/pages/shopping-lists/ShoppingListGeneratorPage';
@@ -59,6 +60,33 @@ const AppLayoutAPI: React.FC = () => {
   // Use proper hooks from API providers
   const { currentUser, logout, isLoadingAuth } = useAuth();
   const { activeView, setActiveView, searchTerm, setSearchTerm } = useAppState();
+  
+  // Sync activeView with current route
+  React.useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/recipe_detail/')) {
+      setActiveView('recipe_detail', { id: path.split('/').pop() || '' });
+    } else if (path.startsWith('/shopping_list_detail/')) {
+      setActiveView('shopping_list_detail', { id: path.split('/').pop() || '' });
+    } else {
+      const viewFromPath = path.substring(1) as ActiveView;
+      if (viewFromPath && viewFromPath !== activeView) {
+        setActiveView(viewFromPath);
+      }
+    }
+  }, [location.pathname]);
+  
+  // Enhanced setActiveView that also handles navigation
+  const navigateToView = (view: ActiveView, params?: Record<string, string>): void => {
+    setActiveView(view, params);
+    if (view === 'recipe_detail' && params?.id) {
+      navigate(`/recipe_detail/${params.id}`);
+    } else if (view === 'shopping_list_detail' && params?.id) {
+      navigate(`/shopping_list_detail/${params.id}`);
+    } else {
+      navigate(`/${view}`);
+    }
+  };
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -221,8 +249,8 @@ const AppLayoutAPI: React.FC = () => {
           <Route path="/verify-email" element={<EmailVerificationPage />} />
           
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-          <Route path="/recipes" element={<ProtectedRoute><PlaceholderPage title="Recipes" /></ProtectedRoute>} />
-          <Route path="/recipe_detail/:id" element={<ProtectedRoute><PlaceholderPage title="Recipe Detail" /></ProtectedRoute>} />
+          <Route path="/recipes" element={<ProtectedRoute><RecipesPageAPI /></ProtectedRoute>} />
+          <Route path="/recipe_detail/:id" element={<ProtectedRoute><RecipeDetailPageAPI /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute><PlaceholderPage title="Inventory" /></ProtectedRoute>} />
           <Route path="/shopping_lists" element={<ProtectedRoute><PlaceholderPage title="Shopping Lists" /></ProtectedRoute>} />
           <Route path="/shopping_list_detail/:id" element={<ProtectedRoute><ShoppingListDetailPage /></ProtectedRoute>} />

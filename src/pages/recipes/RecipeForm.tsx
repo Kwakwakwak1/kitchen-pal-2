@@ -4,6 +4,7 @@ import { UNITS_ARRAY, PlusIcon, TrashIcon } from '../../../constants';
 import { Button, InputField, TextAreaField, SelectField, CheckboxField } from '../../../components';
 import { IngredientCorrectionButton, FixAllIngredientsButton } from '../../../components/IngredientCorrectionButton';
 import { RecipeUrlImport } from './RecipeUrlImport';
+import ErrorBoundary from '../../components/shared/ErrorBoundary';
 
 // Recipe Form
 interface RecipeFormProps {
@@ -115,10 +116,25 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
 
       {/* URL Import Component */}
       {showUrlImport && canShowUrlImport && (
-        <RecipeUrlImport
-          onImport={handleUrlImport}
-          onCancel={() => setShowUrlImport(false)}
-        />
+        <ErrorBoundary
+          fallback={
+            <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
+              <p className="text-red-800 font-medium">URL Import Unavailable</p>
+              <p className="text-red-700 text-sm">The recipe URL import feature is temporarily unavailable. Please use manual entry instead.</p>
+              <button
+                onClick={() => setShowUrlImport(false)}
+                className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+              >
+                Switch to Manual Entry
+              </button>
+            </div>
+          }
+        >
+          <RecipeUrlImport
+            onImport={handleUrlImport}
+            onCancel={() => setShowUrlImport(false)}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Manual Recipe Form */}

@@ -177,8 +177,15 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
   // Context methods
   const addShoppingList = (list: Omit<ShoppingList, 'id' | 'createdAt' | 'status'>): string => {
     const tempId = `temp-${Date.now()}`;
-    addShoppingListMutation.mutate(list);
-    return tempId; // Note: This doesn't return the real ID immediately, which is a limitation
+    addShoppingListMutation.mutate(list, {
+      onSuccess: (newList) => {
+        // Store the real ID mapping for potential navigation
+        window.dispatchEvent(new CustomEvent('shoppingListCreated', { 
+          detail: { tempId, realId: newList.id } 
+        }));
+      }
+    });
+    return tempId; // Note: This returns a temporary ID - real ID available via event
   };
 
   const updateShoppingList = (list: ShoppingList): void => {

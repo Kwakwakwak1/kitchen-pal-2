@@ -77,6 +77,7 @@ export const getRecipes = async (req, res, next) => {
           id: true,
           title: true,
           description: true,
+          instructions: true,
           prep_time: true,
           cook_time: true,
           servings: true,
@@ -88,6 +89,19 @@ export const getRecipes = async (req, res, next) => {
           source_url: true,
           created_at: true,
           updated_at: true,
+          recipe_ingredients: {
+            select: {
+              id: true,
+              ingredient_name: true,
+              quantity: true,
+              unit: true,
+              notes: true,
+              created_at: true
+            },
+            orderBy: {
+              created_at: 'asc'
+            }
+          },
           _count: {
             select: {
               recipe_ingredients: true,
@@ -99,11 +113,15 @@ export const getRecipes = async (req, res, next) => {
       prisma.recipes.count({ where: whereClause })
     ]);
 
-    // Transform the data to include counts
+    // Transform the data to include counts and properly formatted ingredients
     const recipesWithCounts = recipes.map(recipe => ({
       ...recipe,
       ingredients_count: recipe._count.recipe_ingredients,
       reviews_count: recipe._count.recipe_reviews,
+      recipe_ingredients: recipe.recipe_ingredients.map(ingredient => ({
+        ...ingredient,
+        quantity: ingredient.quantity ? parseFloat(ingredient.quantity) : null
+      })),
       _count: undefined
     }));
 

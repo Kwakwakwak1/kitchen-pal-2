@@ -2,35 +2,11 @@ import React, { useState } from 'react';
 import { scrapeRecipeFromUrl, validateRecipeUrl } from '../../../services/recipeScrapingService';
 import { normalizeScrapedRecipe, validateNormalizedRecipe } from '../../../utils/recipeNormalizer';
 import type { ScrapedRecipeData, Recipe } from '../../../types';
+import { Button, InputField, Card } from '../../../components';
 
 // We'll need these icons - assuming they exist in the parent file or can be imported
 
 // These components should exist in the parent application
-declare const Button: React.FC<{
-  type?: 'button' | 'submit';
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg';
-  onClick?: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}>;
-
-declare const InputField: React.FC<{
-  label?: string;
-  id?: string;
-  type?: string;
-  value: string | number;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  placeholder?: string;
-  required?: boolean;
-  disabled?: boolean;
-  error?: string;
-}>;
-
-declare const Card: React.FC<{
-  children: React.ReactNode;
-  className?: string;
-}>;
 
 interface RecipeUrlImportProps {
   onImport: (recipe: Omit<Recipe, 'id' | 'imageUrl'>) => void;

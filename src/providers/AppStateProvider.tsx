@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { ActiveView, AppStateContextType } from '../../types';
 
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
@@ -12,12 +12,12 @@ export const AppStateProvider: React.FC<AppStateProviderProps> = ({ children }) 
   const [viewParams, setViewParams] = useState<Record<string, string>>({});
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  const setActiveView = (view: ActiveView, params?: Record<string, string>): void => {
+  const setActiveView = useCallback((view: ActiveView, params?: Record<string, string>): void => {
     setActiveViewState(view);
     setViewParams(params || {});
     // Clear search when changing views
     setSearchTerm('');
-  };
+  }, []);
 
   const contextValue: AppStateContextType = {
     activeView,
