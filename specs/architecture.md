@@ -89,7 +89,7 @@ Component → Hook → Context → Provider → localStorage
 
 #### Component Structure
 ```
-App.tsx (2065 lines)
+AppAPI.tsx (main application)
 ├── Authentication Components (Login, Signup)
 ├── Navigation Components (Sidebar, Header)
 ├── Domain Components
@@ -142,7 +142,7 @@ localStorage keys:
 ## Key Architectural Decisions
 
 ### 1. Single-File Architecture
-- **Main application logic** concentrated in `App.tsx` (2065 lines)
+- **Main application logic** concentrated in `AppAPI.tsx`
 - **Rationale**: Simplicity for a medium-sized application
 - **Trade-off**: Reduced modularity but easier navigation
 
@@ -201,7 +201,7 @@ localStorage keys:
 - **Consistent patterns** across the codebase
 
 ### Areas for Improvement
-- **Component extraction** from monolithic App.tsx
+- **Component extraction** organized in modular structure
 - **Feature-based folder structure**
 - **Custom hooks** for complex logic
 - **Testing infrastructure**

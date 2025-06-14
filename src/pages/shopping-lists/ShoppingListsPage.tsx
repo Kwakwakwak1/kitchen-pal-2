@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShoppingList, ShoppingListStatus } from '../../../types';
-import { useShoppingLists, useAppState } from '../../../App';
+import { useShoppingLists } from '../../providers/ShoppingListsProviderAPI';
+import { useAppState } from '../../providers/AppStateProvider';
 import { 
   ShoppingCartIcon, ArchiveBoxIcon, ArrowPathIcon, TrashIcon, 
   PlusIcon, XMarkIcon, PencilIcon, MagnifyingGlassIcon 

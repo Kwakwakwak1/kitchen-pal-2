@@ -1,6 +1,9 @@
 import React, { useState, ChangeEvent, FocusEvent } from 'react';
-import { Unit, ShoppingListItem } from '../../../types';
-import { useRecipes, useInventory, useShoppingLists, useAppState } from '../../../App';
+import { Unit, ShoppingListItem, RecipeIngredient } from '../../../types';
+import { useRecipes } from '../../providers/RecipesProviderAPI';
+import { useInventory } from '../../providers/InventoryProviderAPI';
+import { useShoppingLists } from '../../providers/ShoppingListsProviderAPI';
+import { useAppState } from '../../providers/AppStateProvider';
 import { normalizeIngredientName, convertUnit, generateId } from '../../../constants';
 import { Button, CheckboxField, InputField, EmptyState } from '../../../components';
 import { 
@@ -58,7 +61,7 @@ const ShoppingListGeneratorPage: React.FC = () => {
 
       const servingsMultiplier = (servingsOverrides[recipeId] || recipe.defaultServings) / recipe.defaultServings;
 
-      recipe.ingredients.forEach(ing => {
+      recipe.ingredients.forEach((ing: RecipeIngredient) => {
         if (ing.isOptional && (!selectedOptionalIngs[recipeId] || !selectedOptionalIngs[recipeId][ing.ingredientName])) {
           return;
         }

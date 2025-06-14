@@ -182,7 +182,7 @@ export const DashboardPage: React.FC = () => {
 
       {/* Welcome Header */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 text-white">
-        <h1 className="text-3xl font-bold mb-2">Welcome back, {currentUser.name}!</h1>
+        <h1 className="text-3xl font-bold mb-2">Welcome back, {currentUser.name}!!!</h1>
         <p className="text-blue-100">
           Here's what's happening in your kitchen today
         </p>

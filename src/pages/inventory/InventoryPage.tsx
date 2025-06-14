@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { InventoryItem } from '../../../types';
-import { useInventory, useAppState } from '../../../App';
+import { useInventory } from '../../providers/InventoryProviderAPI';
+import { useAppState } from '../../providers/AppStateProvider';
 import { isItemExpiringSoon, isItemExpired, isDiscreteUnit } from '../../../constants';
 import { ArchiveBoxIcon, PlusIcon, TrashIcon, PencilIcon, MagnifyingGlassIcon } from '../../../constants';
 import { Modal, Button, Card, EmptyState, AddItemButton } from '../../../components';
@@ -27,9 +28,9 @@ const InventoryPage: React.FC = () => {
     setShowModal(true);
   };
 
-  const filteredInventory = inventory.filter(item =>
+  const filteredInventory = inventory.filter((item: InventoryItem) =>
     item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase())
-  ).sort((a,b) => {
+  ).sort((a: InventoryItem, b: InventoryItem) => {
       if (a.expirationDate && b.expirationDate) return new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime();
       if (a.expirationDate) return -1;
       if (b.expirationDate) return 1;
@@ -53,7 +54,7 @@ const InventoryPage: React.FC = () => {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredInventory.map(item => {
+          {filteredInventory.map((item: InventoryItem) => {
             const expiringSoon = isItemExpiringSoon(item.expirationDate);
             const expired = isItemExpired(item.expirationDate);
             const lowStock = item.lowStockThreshold && item.quantity < item.lowStockThreshold;

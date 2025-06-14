@@ -1,6 +1,7 @@
 import React, { useState, FormEvent } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth, useAppState } from '../../../App';
+import { useAuth } from '../../providers/AuthProviderAPI';
+import { useAppState } from '../../providers/AppStateProvider';
 import { APP_NAME } from '../../../constants';
 import { Card, Button, InputField, Alert } from '../../../components';
 

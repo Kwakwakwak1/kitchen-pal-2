@@ -8,7 +8,7 @@ import { RecipesProviderAPI } from './src/providers/RecipesProviderAPI';
 import { InventoryProviderAPI } from './src/providers/InventoryProviderAPI';
 import { AppStateProvider } from './src/providers/AppStateProvider';
 
-// Import all the same pages and components as App.tsx
+// Main application component with API-based data providers
 import LoginPageAPI from './src/pages/auth/LoginPageAPI';
 import SignupPageAPI from './src/pages/auth/SignupPageAPI';
 import EmailVerificationPage from './src/pages/auth/EmailVerificationPage';
@@ -42,7 +42,7 @@ import { useAppState } from './src/providers/AppStateProvider';
 
 // Note: PlaceholderPage removed - no longer needed since inventory is now API-integrated
 
-// AppLayout component - mirrors the one from App.tsx but for API version
+// AppLayout component - main layout wrapper for API version
 const AppLayoutAPI: React.FC = () => {
   const location = useLocation();
   

@@ -57,14 +57,14 @@ Component → Hook → Context → Provider → localStorage
 All data is **user-scoped** with localStorage keys like `recipes_{userId}`, `inventory_{userId}`, etc.
 
 #### Key Files
-- `App.tsx` (2000+ lines) - Main application with all page components
+- `AppAPI.tsx` (main) - API-based application with all page components
 - `types.ts` - Comprehensive TypeScript interfaces for all entities
 - `components.tsx` - Reusable UI component library
 - `constants.tsx` - Utilities, unit conversion, ID generation
 - `localStorageService.ts` - Type-safe localStorage operations
 
 ### Component Organization
-The project recently restructured from a monolithic App.tsx to organized page structure:
+The project uses AppAPI.tsx as the main entry point with organized page structure:
 - `src/pages/` - All page components organized by domain
 - `src/components/` - Reusable components and UI elements
 - `src/providers/` - Context providers for state management

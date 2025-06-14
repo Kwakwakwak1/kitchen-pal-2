@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Recipe, ShoppingListItem, Unit } from '../../../types';
+import { Recipe, ShoppingListItem, Unit, RecipeIngredient } from '../../../types';
 import { type ScaledIngredient } from '../../../utils/recipeScaling';
-import { useRecipes, useInventory, useShoppingLists, useAppState } from '../../../App';
+import { useRecipes } from '../../providers/RecipesProviderAPI';
+import { useInventory } from '../../providers/InventoryProviderAPI';
+import { useShoppingLists } from '../../providers/ShoppingListsProviderAPI';
+import { useAppState } from '../../providers/AppStateProvider';
 import { generateId, normalizeIngredientName, convertUnit, DEFAULT_RECIPE_IMAGE } from '../../../constants';
 import { BookOpenIcon, ArrowLeftIcon, PencilIcon, SparklesIcon, ShoppingCartIcon } from '../../../constants';
 import { Modal, Button, InputField, Card, Alert, EmptyState } from '../../../components';
@@ -71,7 +74,7 @@ const RecipeDetailPage: React.FC = () => {
     const servingsMultiplier = currentServings / recipe.defaultServings;
     const neededIngredients: Record<string, { totalQuantity: number; unit: Unit; defaultStoreId?: string }> = {};
 
-    recipe.ingredients.forEach(ing => {
+    recipe.ingredients.forEach((ing: RecipeIngredient) => {
       // Skip optional ingredients by default
       if (ing.isOptional) return;
 

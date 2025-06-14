@@ -1,5 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { useAuth, useRecipes, useInventory, useShoppingLists, useStores } from '../../../App';
+import { useAuth } from '../../providers/AuthProviderAPI';
+import { useRecipes } from '../../providers/RecipesProviderAPI';
+import { useInventory } from '../../providers/InventoryProviderAPI';
+import { useShoppingLists } from '../../providers/ShoppingListsProviderAPI';
+import { useStores } from '../../providers/StoresProviderAPI';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 
