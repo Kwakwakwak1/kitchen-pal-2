@@ -1,6 +1,6 @@
 // API Response Types for Kitchen Pal Backend Integration
 
-export interface ApiResponse<T = any> {
+export interface ApiResponse {
   success?: boolean;
   message?: string;
   [key: string]: any; // For specific response fields like 'user', 'store', etc.

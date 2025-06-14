@@ -102,7 +102,7 @@ const DashboardPage: React.FC = () => {
   return (
     <div className="container mx-auto p-4 space-y-8">
         {alertMessage && <Alert type={alertMessage.type} message={alertMessage.message} onClose={() => setAlertMessage(null)} />}
-        <h1 className="text-3xl font-bold text-gray-800">Welcome to your Dashboard, {currentUser?.name}!</h1>
+        <h1 className="text-3xl font-bold text-gray-800">Welcome, {currentUser?.name}!</h1>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <Card>

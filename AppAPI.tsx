@@ -1,5 +1,5 @@
 import React, { useState, ReactElement } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { QueryProvider } from './src/providers/QueryProvider';
 import { AuthProviderAPI } from './src/providers/AuthProviderAPI';
 import { StoresProviderAPI } from './src/providers/StoresProviderAPI';
@@ -45,7 +45,6 @@ import { useAppState } from './src/providers/AppStateProvider';
 // AppLayout component - mirrors the one from App.tsx but for API version
 const AppLayoutAPI: React.FC = () => {
   const location = useLocation();
-  const navigate = useNavigate();
   
   // Use proper hooks from API providers
   const { currentUser, logout, isLoadingAuth } = useAuth();

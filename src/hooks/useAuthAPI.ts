@@ -38,7 +38,7 @@ export const useAuthAPI = () => {
           // Try to get preferences (optional)
           let preferences: UserPreferences | undefined;
           try {
-            const apiPreferences = await authService.getUserPreferences();
+            await authService.getUserPreferences();
             preferences = {
               defaultStoreId: undefined, // API doesn't have this yet
               measurementSystem: undefined, // API doesn't have this yet
@@ -140,7 +140,7 @@ export const useAuthAPI = () => {
   }, []);
 
   const updateUserProfile = useCallback(async (
-    userId: string, 
+    _userId: string, 
     data: Partial<Pick<User, 'name' | 'email' | 'passwordHash'>>
   ): Promise<boolean> => {
     try {

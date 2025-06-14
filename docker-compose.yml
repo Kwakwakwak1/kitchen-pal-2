@@ -14,7 +14,7 @@ services:
             - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
             - ./database/fix-password.sql:/docker-entrypoint-initdb.d/02-fix-password.sql:ro
         ports:
-            - "5432:5432"
+            - "5433:5432"
         networks:
             kitchen-pal-network:
                 ipv4_address: 172.20.0.4
@@ -38,7 +38,6 @@ services:
             PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
             PGADMIN_CONFIG_SERVER_MODE: "True"
             PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
-            SCRIPT_NAME: "/pgadmin"
         volumes:
             - pgadmin_data:/var/lib/pgadmin
             - ./database/servers.json:/pgadmin4/servers.json:ro
@@ -132,8 +131,8 @@ services:
             - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
             - ./nginx/ssl:/etc/nginx/ssl:ro
         ports:
-            - "80:80"
-            - "443:443"
+            - "8080:80"
+            - "8443:443"
         networks:
             - kitchen-pal-network
         depends_on:

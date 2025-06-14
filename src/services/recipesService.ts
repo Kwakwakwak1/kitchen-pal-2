@@ -47,7 +47,6 @@ interface CreateRecipeRequest {
   }>;
 }
 
-interface UpdateRecipeRequest extends Partial<CreateRecipeRequest> {}
 
 interface RecipesResponse {
   recipes: RecipeAPI[];

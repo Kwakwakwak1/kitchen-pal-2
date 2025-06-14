@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => {
             target: 'http://localhost:3001',
             changeOrigin: true,
             rewrite: (path) => path.replace(/^\/api\/recipe-proxy/, ''),
-            configure: (proxy, options) => {
+            configure: (_proxy, _options) => {
               // Custom proxy configuration if needed
             }
           }

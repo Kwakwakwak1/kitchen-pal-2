@@ -201,7 +201,7 @@ class AuthApiService {
         autoArchiveAfterDays: 30,
         deleteArchivedAfterDays: 365,
         // Add API preferences
-        theme: preferences.theme,
+        theme: preferences.theme as 'light' | 'dark' | undefined,
         language: preferences.language,
         notificationsEnabled: preferences.notifications_enabled,
         dietaryRestrictions: preferences.dietary_restrictions,
