@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { InventoryItem, InventoryContextType, Recipe, Unit, FrequencyOfUse } from '../../types';
 import { inventoryService } from '../services/inventoryService';
 import { normalizeIngredientName, convertUnit } from '../../constants';
+import { useToast } from './ToastProvider';
+import { useAuthAPI } from './AuthProviderAPI';
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
@@ -24,15 +26,22 @@ const transformInventoryItemFromAPI = (apiItem: any): InventoryItem => ({
 
 export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const { currentUser, isLoadingAuth } = useAuthAPI();
 
   // Queries
   const { data: inventory = [] } = useQuery({
     queryKey: ['inventory'],
     queryFn: async () => {
+      console.log('Fetching inventory...');
       const response = await inventoryService.getInventory();
-      return response.inventory.map(transformInventoryItemFromAPI);
+      console.log('Raw inventory API response:', response);
+      const transformed = response.inventory.map(transformInventoryItemFromAPI);
+      console.log('Transformed inventory items:', transformed);
+      return transformed;
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: !!currentUser && !isLoadingAuth, // Only run when authenticated
   });
 
   // Mutations
@@ -90,10 +99,31 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
       });
       return transformInventoryItemFromAPI(updatedItem);
     },
+    onMutate: async (newItem) => {
+      await queryClient.cancelQueries({ queryKey: ['inventory'] });
+      const previousInventory = queryClient.getQueryData(['inventory']);
+      
+      queryClient.setQueryData(['inventory'], (old: InventoryItem[] = []) =>
+        old.map(item => item.id === newItem.id ? newItem : item)
+      );
+      
+      return { previousInventory };
+    },
+    onError: (err, newItem, context) => {
+      if (context?.previousInventory) {
+        queryClient.setQueryData(['inventory'], context.previousInventory);
+      }
+      console.error('Failed to update inventory item:', newItem.ingredientName, err);
+      showToast('error', `Failed to update "${newItem.ingredientName}". Please try again.`);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+    },
     onSuccess: (updatedItem) => {
       queryClient.setQueryData(['inventory'], (oldInventory: InventoryItem[] = []) =>
         oldInventory.map(invItem => invItem.id === updatedItem.id ? updatedItem : invItem)
       );
+      showToast('success', `"${updatedItem.ingredientName}" updated successfully!`);
     },
   });
 

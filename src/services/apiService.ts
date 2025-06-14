@@ -181,15 +181,23 @@ class ApiService {
       const response: AxiosResponse<T> = await this.client.post(url, data, config);
       console.log(`API POST ${url} response:`, response.data);
       return response.data;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`API POST ${url} error:`, error);
       throw error;
     }
   }
 
   async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    const response: AxiosResponse<T> = await this.client.put(url, data, config);
-    return response.data;
+    console.log(`API PUT ${url}:`, data);
+    try {
+      const response: AxiosResponse<T> = await this.client.put(url, data, config);
+      console.log(`API PUT ${url} response:`, response.data);
+      return response.data;
+    } catch (error: unknown) {
+      console.error(`API PUT ${url} error:`, error);
+      console.error(`API PUT ${url} error response:`, (error as any)?.response?.data);
+      throw error;
+    }
   }
 
   async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {

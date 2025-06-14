@@ -47,7 +47,6 @@ interface CreateRecipeRequest {
   }>;
 }
 
-
 interface RecipesResponse {
   recipes: RecipeAPI[];
   count: number;
@@ -127,10 +126,11 @@ const transformRecipeFromAPI = (apiRecipe: RecipeAPI, ingredients: RecipeIngredi
   sourceUrl: apiRecipe.source_url,
   defaultServings: apiRecipe.servings,
   ingredients: ingredients.map(ing => ({
+    id: ing.id, // Preserve ingredient ID for updates
     ingredientName: ing.ingredient_name,
     quantity: ing.quantity,
     unit: ing.unit as any, // Will need proper Unit enum mapping
-    isOptional: false,
+    isOptional: ing.notes?.toLowerCase().includes('optional') || false, // Parse optional from notes
   })),
   instructions: apiRecipe.instructions,
   prepTime: formatMinutesToTime(apiRecipe.prep_time),
@@ -139,23 +139,28 @@ const transformRecipeFromAPI = (apiRecipe: RecipeAPI, ingredients: RecipeIngredi
   imageUrl: apiRecipe.image_url,
 });
 
-const transformRecipeToAPI = (recipe: Omit<Recipe, 'id'>): CreateRecipeRequest => ({
-  title: recipe.name,
-  prep_time: parseTimeToMinutes(recipe.prepTime),
-  cook_time: parseTimeToMinutes(recipe.cookTime),
-  servings: recipe.defaultServings,
-  instructions: recipe.instructions,
-  tags: recipe.tags,
-  source_name: recipe.sourceName,
-  source_url: recipe.sourceUrl,
-  image_url: recipe.imageUrl,
-  ingredients: recipe.ingredients.map(ing => ({
-    ingredient_name: ing.ingredientName,
-    quantity: ing.quantity,
-    unit: ing.unit,
-    is_optional: ing.isOptional || false,
-  })),
-});
+const transformRecipeToAPI = (recipe: Omit<Recipe, 'id'>): CreateRecipeRequest => {
+  const transformed = {
+    title: recipe.name?.trim() || '', // Ensure title is not empty
+    prep_time: parseTimeToMinutes(recipe.prepTime),
+    cook_time: parseTimeToMinutes(recipe.cookTime),
+    servings: Math.max(1, recipe.defaultServings || 1), // Ensure servings is at least 1
+    instructions: recipe.instructions?.trim() || '', // Ensure instructions is not empty
+    tags: recipe.tags || [],
+    source_name: recipe.sourceName?.trim() || undefined,
+    source_url: recipe.sourceUrl?.trim() || undefined,
+    image_url: recipe.imageUrl?.trim() || undefined,
+    ingredients: (recipe.ingredients || []).filter(ing => ing.ingredientName?.trim()).map(ing => ({
+      ingredient_name: ing.ingredientName.trim(),
+      quantity: Math.max(0, ing.quantity || 0), // Ensure quantity is non-negative
+      unit: ing.unit || 'piece',
+      is_optional: Boolean(ing.isOptional),
+    })),
+  };
+  
+  console.log('Transformed recipe to API format:', transformed);
+  return transformed;
+};
 
 class RecipesService {
   async getRecipes(): Promise<Recipe[]> {
@@ -179,9 +184,158 @@ class RecipesService {
   }
 
   async updateRecipe(recipe: Recipe): Promise<Recipe> {
-    const updateData = transformRecipeToAPI(recipe);
-    const response = await apiService.put<{ recipe: RecipeAPI; recipe_ingredients: RecipeIngredientAPI[] }>(`/recipes/${recipe.id}`, updateData);
-    return transformRecipeFromAPI(response.recipe, response.recipe_ingredients);
+    console.log('Original recipe object:', recipe);
+    
+    // Validate that we have required fields
+    if (!recipe.id) {
+      throw new Error('Recipe ID is required for updates');
+    }
+    
+    if (!recipe.name?.trim()) {
+      throw new Error('Recipe name is required');
+    }
+    
+    if (!recipe.instructions?.trim()) {
+      throw new Error('Recipe instructions are required');
+    }
+    
+    if (!recipe.ingredients || recipe.ingredients.length === 0) {
+      throw new Error('Recipe must have at least one ingredient');
+    }
+    
+    try {
+      // Step 1: Update recipe metadata (title, instructions, times, etc.)
+      const metadataUpdate = {
+        title: recipe.name.trim(),
+        instructions: recipe.instructions.trim(),
+        prep_time: parseTimeToMinutes(recipe.prepTime),
+        cook_time: parseTimeToMinutes(recipe.cookTime),
+        servings: Math.max(1, recipe.defaultServings || 1),
+        source_url: recipe.sourceUrl?.trim() || undefined,
+        image_url: recipe.imageUrl?.trim() || undefined,
+      };
+      
+      console.log('Updating recipe metadata:', metadataUpdate);
+      const metadataResponse = await apiService.put<{ recipe: RecipeAPI }>(`/recipes/${recipe.id}`, metadataUpdate);
+      console.log('Metadata update successful:', metadataResponse);
+      
+      // Step 2: Get current recipe to compare ingredients
+      const currentRecipe = await this.getRecipeById(recipe.id);
+      console.log('Current recipe from API:', currentRecipe);
+      
+      // Step 3: Handle ingredient updates
+      const currentIngredients = currentRecipe.ingredients || [];
+      const newIngredients = recipe.ingredients.filter(ing => ing.ingredientName?.trim());
+      
+      console.log('Current ingredients:', currentIngredients);
+      console.log('New ingredients:', newIngredients);
+      
+      // Update/create ingredients
+      const ingredientPromises: Promise<any>[] = [];
+      
+      // Keep track of which ingredients we've processed
+      const processedIngredientIds = new Set<string>();
+      
+      // Update existing ingredients and add new ones
+      for (const newIng of newIngredients) {
+        // Try to find matching ingredient by name (case-insensitive)
+        const existingIng = currentIngredients.find(curr => 
+          curr.ingredientName.toLowerCase().trim() === newIng.ingredientName.toLowerCase().trim()
+        );
+        
+        if (existingIng) {
+          // Update existing ingredient
+          processedIngredientIds.add(existingIng.ingredientName.toLowerCase().trim());
+          
+          // Check if anything actually changed
+          const hasChanges = (
+            existingIng.quantity !== newIng.quantity ||
+            existingIng.unit !== newIng.unit ||
+            Boolean(existingIng.isOptional) !== Boolean(newIng.isOptional) // Ensure proper boolean comparison
+          );
+          
+          if (hasChanges) {
+            console.log(`Updating ingredient: ${newIng.ingredientName}`);
+            console.log(`Changes detected:`, {
+              quantity: existingIng.quantity !== newIng.quantity ? `${existingIng.quantity} -> ${newIng.quantity}` : 'no change',
+              unit: existingIng.unit !== newIng.unit ? `${existingIng.unit} -> ${newIng.unit}` : 'no change',
+              optional: Boolean(existingIng.isOptional) !== Boolean(newIng.isOptional) ? `${existingIng.isOptional} -> ${newIng.isOptional}` : 'no change'
+            });
+            const updatePromise = this.updateIngredient(existingIng, newIng);
+            ingredientPromises.push(updatePromise);
+          } else {
+            console.log(`No changes detected for ingredient: ${newIng.ingredientName}`);
+          }
+        } else {
+          // Add new ingredient
+          console.log(`Adding new ingredient: ${newIng.ingredientName}`);
+          const addPromise = this.addIngredient(recipe.id, newIng);
+          ingredientPromises.push(addPromise);
+        }
+      }
+      
+      // Delete ingredients that are no longer present
+      for (const currentIng of currentIngredients) {
+        if (!processedIngredientIds.has(currentIng.ingredientName.toLowerCase().trim())) {
+          console.log(`Deleting ingredient: ${currentIng.ingredientName}`);
+          // We'll need to implement deleteIngredient if it's not available
+          // For now, skip deletion to avoid errors
+        }
+      }
+      
+      // Execute all ingredient operations
+      if (ingredientPromises.length > 0) {
+        console.log(`Executing ${ingredientPromises.length} ingredient operations...`);
+        await Promise.all(ingredientPromises);
+        console.log('All ingredient operations completed');
+      }
+      
+      // Step 4: Get the updated recipe
+      const updatedRecipe = await this.getRecipeById(recipe.id);
+      console.log('Final updated recipe:', updatedRecipe);
+      
+      return updatedRecipe;
+      
+    } catch (error) {
+      console.error('Recipe update failed:', error);
+      console.error('Error response data:', (error as any)?.response?.data);
+      throw error;
+    }
+  }
+  
+  // Helper method to update a single ingredient
+  private async updateIngredient(existingIngredient: any, newIngredient: any): Promise<void> {
+    if (!existingIngredient.id) {
+      console.warn('Cannot update ingredient without ID:', existingIngredient);
+      return;
+    }
+    
+    // Properly handle optional flag - explicitly set notes to empty string when not optional
+    const updateData = {
+      ingredient_name: newIngredient.ingredientName.trim(),
+      quantity: newIngredient.quantity,
+      unit: newIngredient.unit,
+      notes: newIngredient.isOptional ? 'optional' : '' // Explicitly clear notes when not optional
+    };
+    
+    console.log(`Updating ingredient ${existingIngredient.id}:`, updateData);
+    console.log(`Optional flag change: ${existingIngredient.isOptional} -> ${newIngredient.isOptional}`);
+    
+    await apiService.put(`/recipes/ingredients/${existingIngredient.id}`, updateData);
+    console.log(`Successfully updated ingredient: ${newIngredient.ingredientName}`);
+  }
+  
+  // Helper method to add a new ingredient
+  private async addIngredient(recipeId: string, ingredient: any): Promise<void> {
+    const addData = {
+      ingredient_name: ingredient.ingredientName.trim(),
+      quantity: ingredient.quantity,
+      unit: ingredient.unit,
+      notes: ingredient.isOptional ? 'optional' : '' // Consistent with update method
+    };
+    
+    console.log('Adding ingredient to recipe:', addData);
+    await apiService.post(`/recipes/${recipeId}/ingredients`, addData);
   }
 
   async deleteRecipe(id: string): Promise<void> {

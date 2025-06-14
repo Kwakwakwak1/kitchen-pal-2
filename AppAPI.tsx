@@ -7,6 +7,7 @@ import { ShoppingListsProviderAPI } from './src/providers/ShoppingListsProviderA
 import { RecipesProviderAPI } from './src/providers/RecipesProviderAPI';
 import { InventoryProviderAPI } from './src/providers/InventoryProviderAPI';
 import { AppStateProvider } from './src/providers/AppStateProvider';
+import { ToastProvider } from './src/providers/ToastProvider';
 
 // Main application component with API-based data providers
 import LoginPageAPI from './src/pages/auth/LoginPageAPI';
@@ -255,15 +256,17 @@ const AppLayoutAPI: React.FC = () => {
 // Always provide all providers to avoid hook errors
 const AuthenticatedProviders: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <StoresProviderAPI>
-      <ShoppingListsProviderAPI>
-        <RecipesProviderAPI>
-          <InventoryProviderAPI>
-            {children}
-          </InventoryProviderAPI>
-        </RecipesProviderAPI>
-      </ShoppingListsProviderAPI>
-    </StoresProviderAPI>
+    <ToastProvider>
+      <StoresProviderAPI>
+        <ShoppingListsProviderAPI>
+          <RecipesProviderAPI>
+            <InventoryProviderAPI>
+              {children}
+            </InventoryProviderAPI>
+          </RecipesProviderAPI>
+        </ShoppingListsProviderAPI>
+      </StoresProviderAPI>
+    </ToastProvider>
   );
 };
 

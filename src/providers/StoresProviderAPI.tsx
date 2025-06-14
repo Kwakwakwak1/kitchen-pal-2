@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Store, StoresContextType } from '../../types';
 import { storesService } from '../services';
 import { StoreAPI } from '../types/api';
+import { useToast } from './ToastProvider';
+import { useAuthAPI } from './AuthProviderAPI';
 
 const StoresContext = createContext<StoresContextType | undefined>(undefined);
 
@@ -20,25 +22,40 @@ const transformStoreFromAPI = (apiStore: StoreAPI): Store => ({
 
 export const StoresProviderAPI: React.FC<StoresProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const { currentUser, isLoadingAuth } = useAuthAPI();
 
-  // Queries
+  // Queries - only run when user is authenticated
   const { data: stores = [] } = useQuery({
     queryKey: ['stores'],
     queryFn: async () => {
+      console.log('Fetching stores...');
       const response = await storesService.getStores();
+      console.log('Stores API response:', response);
       return response.stores.map(transformStoreFromAPI);
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: !!currentUser && !isLoadingAuth, // Only run when authenticated
   });
 
   // Mutations
   const addStoreMutation = useMutation({
-    mutationFn: (store: Omit<Store, 'id'>) => storesService.createStore(store),
+    mutationFn: (store: Omit<Store, 'id'>) => {
+      console.log('Creating store:', store);
+      return storesService.createStore(store);
+    },
     onSuccess: (newStore) => {
+      console.log('Store created successfully:', newStore);
       queryClient.setQueryData(['stores'], (oldStores: Store[] = []) => [
         ...oldStores,
         transformStoreFromAPI(newStore)
       ]);
+      showToast('success', `Store "${newStore.name}" created successfully!`);
+    },
+    onError: (err, newStore) => {
+      console.error('Failed to create store:', newStore.name, err);
+      const errorMessage = (err as any)?.message || 'Unknown error occurred';
+      showToast('error', `Failed to create store "${newStore.name}": ${errorMessage}`);
     },
   });
 
@@ -48,10 +65,31 @@ export const StoresProviderAPI: React.FC<StoresProviderProps> = ({ children }) =
       location: store.location,
       website: store.website,
     }),
+    onMutate: async (newStore) => {
+      await queryClient.cancelQueries({ queryKey: ['stores'] });
+      const previousStores = queryClient.getQueryData(['stores']);
+      
+      queryClient.setQueryData(['stores'], (old: Store[] = []) =>
+        old.map(s => s.id === newStore.id ? newStore : s)
+      );
+      
+      return { previousStores };
+    },
+    onError: (err, newStore, context) => {
+      if (context?.previousStores) {
+        queryClient.setQueryData(['stores'], context.previousStores);
+      }
+      console.error('Failed to update store:', newStore.name, err);
+      showToast('error', `Failed to update store "${newStore.name}". Please try again.`);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['stores'] });
+    },
     onSuccess: (updatedStore, originalStore) => {
       queryClient.setQueryData(['stores'], (oldStores: Store[] = []) =>
         oldStores.map(s => s.id === originalStore.id ? transformStoreFromAPI(updatedStore) : s)
       );
+      showToast('success', `Store "${updatedStore.name}" updated successfully!`);
     },
   });
 

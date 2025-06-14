@@ -20,6 +20,7 @@ export interface Ingredient {
 }
 
 export interface RecipeIngredient {
+  id?: string; // Add optional ID for API updates
   ingredientName: string; // Name of the ingredient, not ID, for simplicity in forms. Will be normalized.
   quantity: number;
   unit: Unit;
