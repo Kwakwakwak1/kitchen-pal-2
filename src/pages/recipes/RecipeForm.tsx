@@ -4,6 +4,7 @@ import { UNITS_ARRAY, PlusIcon, TrashIcon } from '../../../constants';
 import { Button, InputField, TextAreaField, SelectField, CheckboxField } from '../../../components';
 import { IngredientCorrectionButton, FixAllIngredientsButton } from '../../../components/IngredientCorrectionButton';
 import { RecipeUrlImport } from './RecipeUrlImport';
+import { RecipeJsonImport } from './RecipeJsonImport';
 import ErrorBoundary from '../../components/shared/ErrorBoundary';
 
 // Recipe Form
@@ -14,7 +15,7 @@ interface RecipeFormProps {
 }
 
 const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose }) => {
-  const [showUrlImport, setShowUrlImport] = useState(false);
+  const [importMode, setImportMode] = useState<'manual' | 'url' | 'json'>('manual');
   const [name, setName] = useState(initialRecipe?.name || '');
   const [defaultServings, setDefaultServings] = useState(initialRecipe?.defaultServings || 4);
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(initialRecipe?.ingredients || [{ ingredientName: '', quantity: 1, unit: Unit.PIECE, isOptional: false }]);
@@ -44,7 +45,7 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
   const addIngredientField = () => setIngredients([...ingredients, { ingredientName: '', quantity: 1, unit: Unit.PIECE, isOptional: false }]);
   const removeIngredientField = (index: number) => setIngredients(ingredients.filter((_, i) => i !== index));
 
-  const handleUrlImport = (importedRecipe: Omit<Recipe, 'id' | 'imageUrl'>) => {
+  const handleImport = (importedRecipe: Omit<Recipe, 'id' | 'imageUrl'>) => {
     // Populate form fields with imported data
     setName(importedRecipe.name);
     setDefaultServings(importedRecipe.defaultServings);
@@ -56,8 +57,8 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
     setCookTime(importedRecipe.cookTime || '');
     setTags(importedRecipe.tags?.join(', ') || '');
     
-    // Hide URL import section
-    setShowUrlImport(false);
+    // Switch to manual mode
+    setImportMode('manual');
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -81,48 +82,56 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
     onClose();
   };
 
-  // Don't show URL import for editing existing recipes
-  const canShowUrlImport = !initialRecipe;
+  // Don't show import options for editing existing recipes
+  const canShowImport = !initialRecipe;
 
   return (
     <div className="space-y-4">
-      {/* URL Import Toggle - only show for new recipes */}
-      {canShowUrlImport && (
+      {/* Import Toggle - only show for new recipes */}
+      {canShowImport && (
         <div className="flex items-center justify-between pb-4 border-b border-gray-200">
           <div>
             <h3 className="text-lg font-medium">Add Recipe</h3>
-            <p className="text-sm text-gray-500">Create manually or import from a URL</p>
+            <p className="text-sm text-gray-500">Create manually or import from a URL or JSON</p>
           </div>
           <div className="flex space-x-2">
             <Button
               type="button"
-              variant={!showUrlImport ? 'primary' : 'ghost'}
+              variant={importMode === 'manual' ? 'primary' : 'ghost'}
               size="sm"
-              onClick={() => setShowUrlImport(false)}
+              onClick={() => setImportMode('manual')}
             >
               Manual Entry
             </Button>
             <Button
               type="button"
-              variant={showUrlImport ? 'primary' : 'ghost'}
+              variant={importMode === 'url' ? 'primary' : 'ghost'}
               size="sm"
-              onClick={() => setShowUrlImport(true)}
+              onClick={() => setImportMode('url')}
             >
               Import from URL
+            </Button>
+            <Button
+              type="button"
+              variant={importMode === 'json' ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={() => setImportMode('json')}
+            >
+              Import from JSON
             </Button>
           </div>
         </div>
       )}
 
       {/* URL Import Component */}
-      {showUrlImport && canShowUrlImport && (
+      {importMode === 'url' && canShowImport && (
         <ErrorBoundary
           fallback={
             <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
               <p className="text-red-800 font-medium">URL Import Unavailable</p>
               <p className="text-red-700 text-sm">The recipe URL import feature is temporarily unavailable. Please use manual entry instead.</p>
               <button
-                onClick={() => setShowUrlImport(false)}
+                onClick={() => setImportMode('manual')}
                 className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
               >
                 Switch to Manual Entry
@@ -131,14 +140,22 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, onSave, onClose 
           }
         >
           <RecipeUrlImport
-            onImport={handleUrlImport}
-            onCancel={() => setShowUrlImport(false)}
+            onImport={handleImport}
+            onCancel={() => setImportMode('manual')}
           />
         </ErrorBoundary>
       )}
 
+      {/* JSON Import Component */}
+      {importMode === 'json' && canShowImport && (
+        <RecipeJsonImport
+          onImport={handleImport}
+          onCancel={() => setImportMode('manual')}
+        />
+      )}
+
       {/* Manual Recipe Form */}
-      {!showUrlImport && (
+      {importMode === 'manual' && (
         <form onSubmit={handleSubmit} className="space-y-4">
           <InputField label="Recipe Name" id="recipeName" value={name} onChange={e => setName(e.target.value)} required />
           <InputField label="Default Servings" id="defaultServings" type="number" value={defaultServings} onChange={e => setDefaultServings(Number(e.target.value))} min="1" required />

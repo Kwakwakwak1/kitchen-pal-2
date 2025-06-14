@@ -11,6 +11,9 @@ const InventoryPage: React.FC = () => {
   const { searchTerm } = useAppState(); 
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | undefined>(undefined);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSave = (itemData: Omit<InventoryItem, 'id'> | InventoryItem) => {
     if ('id' in itemData) {
@@ -27,6 +30,52 @@ const InventoryPage: React.FC = () => {
     setShowModal(true);
   };
 
+  // Selection handlers for batch operations
+  const toggleSelectMode = () => {
+    setIsSelectMode(!isSelectMode);
+    if (isSelectMode) {
+      setSelectedItems(new Set());
+    }
+  };
+
+  const toggleSelectItem = (itemId: string) => {
+    const newSelectedItems = new Set(selectedItems);
+    if (newSelectedItems.has(itemId)) {
+      newSelectedItems.delete(itemId);
+    } else {
+      newSelectedItems.add(itemId);
+    }
+    setSelectedItems(newSelectedItems);
+  };
+
+  const selectAllItems = () => {
+    const allItemIds = filteredInventory.map(item => item.id);
+    setSelectedItems(new Set(allItemIds));
+  };
+
+  const clearSelection = () => {
+    setSelectedItems(new Set());
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedItems.size === 0) return;
+    
+    setIsDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedItems);
+      // For the non-API version, we'll just delete them one by one
+      idsToDelete.forEach(id => deleteInventoryItem(id));
+      
+      setSelectedItems(new Set());
+      setIsSelectMode(false);
+    } catch (error) {
+      console.error('Error deleting items:', error);
+      alert('Failed to delete some items. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const filteredInventory = inventory.filter(item =>
     item.ingredientName.toLowerCase().includes(searchTerm.toLowerCase())
   ).sort((a,b) => {
@@ -38,6 +87,47 @@ const InventoryPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4">
+       {/* Batch operations toolbar */}
+       <div className="mb-4 space-y-2">
+         {/* Top row: Mode toggle and selection controls */}
+         <div className="flex flex-wrap items-center gap-2">
+           <Button 
+             variant={isSelectMode ? "primary" : "ghost"} 
+             onClick={toggleSelectMode}
+           >
+             {isSelectMode ? 'Exit Select Mode' : 'Select Items'}
+           </Button>
+           
+           {isSelectMode && (
+             <>
+               <Button variant="ghost" onClick={selectAllItems}>
+                 Select All ({filteredInventory.length})
+               </Button>
+               <Button variant="ghost" onClick={clearSelection}>
+                 Clear Selection
+               </Button>
+             </>
+           )}
+         </div>
+         
+         {/* Bottom row: Selection count and delete button */}
+         {isSelectMode && selectedItems.size > 0 && (
+           <div className="flex flex-wrap items-center justify-between gap-2">
+             <span className="text-sm text-gray-600">
+               {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+             </span>
+             <Button 
+               variant="danger" 
+               onClick={handleBatchDelete}
+               disabled={isDeleting}
+               leftIcon={<TrashIcon className="w-4 h-4" />}
+             >
+               {isDeleting ? 'Deleting...' : `Delete Selected (${selectedItems.size})`}
+             </Button>
+           </div>
+         )}
+       </div>
+
        {filteredInventory.length === 0 && searchTerm === '' ? (
         <EmptyState 
           icon={<ArchiveBoxIcon />}
@@ -64,6 +154,18 @@ const InventoryPage: React.FC = () => {
 
             return (
             <Card key={item.id} className={`relative ${cardBorder}`}>
+              {/* Selection checkbox */}
+              {isSelectMode && (
+                <div className="absolute top-2 left-2 z-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedItems.has(item.id)}
+                    onChange={() => toggleSelectItem(item.id)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                </div>
+              )}
+              
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="text-lg font-semibold">{item.ingredientName}</h3>

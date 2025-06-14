@@ -8,7 +8,8 @@ import {
   deleteRecipe,
   addRecipeIngredient,
   updateRecipeIngredient,
-  deleteRecipeIngredient
+  deleteRecipeIngredient,
+  importRecipeFromJson
 } from '../controllers/recipeController.js';
 
 const router = express.Router();
@@ -265,6 +266,91 @@ router.put('/:id', validate({
  *         description: Recipe not found
  */
 router.delete('/:id', validate({ params: commonSchemas.uuidParam }), deleteRecipe);
+
+/**
+ * @swagger
+ * /api/recipes/import:
+ *   post:
+ *     summary: Import a recipe from JSON data
+ *     tags: [Recipes]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - instructions
+ *               - ingredients
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 maxLength: 255
+ *               description:
+ *                 type: string
+ *               instructions:
+ *                 type: string
+ *               prep_time:
+ *                 type: integer
+ *                 minimum: 0
+ *               cook_time:
+ *                 type: integer
+ *                 minimum: 0
+ *               servings:
+ *                 type: integer
+ *                 minimum: 1
+ *               difficulty_level:
+ *                 type: string
+ *                 enum: [easy, medium, hard]
+ *               cuisine_type:
+ *                 type: string
+ *                 maxLength: 100
+ *               meal_type:
+ *                 type: string
+ *                 maxLength: 50
+ *               is_public:
+ *                 type: boolean
+ *                 default: false
+ *               image_url:
+ *                 type: string
+ *                 format: uri
+ *               source_url:
+ *                 type: string
+ *                 format: uri
+ *               source_name:
+ *                 type: string
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               ingredients:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - ingredient_name
+ *                   properties:
+ *                     ingredient_name:
+ *                       type: string
+ *                       maxLength: 255
+ *                     quantity:
+ *                       type: number
+ *                       minimum: 0
+ *                     unit:
+ *                       type: string
+ *                       maxLength: 50
+ *                     notes:
+ *                       type: string
+ *     responses:
+ *       201:
+ *         description: Recipe imported successfully
+ *       409:
+ *         description: Recipe with this title already exists
+ */
+router.post('/import', validate({ body: recipeSchemas.import }), importRecipeFromJson);
 
 /**
  * @swagger

@@ -3,12 +3,12 @@ import { Store } from '../../../types';
 import { useStores } from '../../providers/StoresProviderAPI';
 import { useAppState } from '../../providers/AppStateProvider';
 import { BuildingStorefrontIcon, MagnifyingGlassIcon, PlusIcon, PencilIcon, TrashIcon } from '../../../constants';
-import { Modal, Button, Card, EmptyState, AddItemButton } from '../../../components';
+import { Modal, Button, Card, EmptyState, BottomActionBar } from '../../../components';
 import StoreForm from './StoreForm';
 
 const StoresPage: React.FC = () => { 
   const { stores, addStore, updateStore, deleteStore } = useStores();
-  const { searchTerm } = useAppState();
+  const { searchTerm, setSearchTerm } = useAppState();
   const [showModal, setShowModal] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | undefined>(undefined);
 
@@ -33,7 +33,7 @@ const StoresPage: React.FC = () => {
   ).sort((a,b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-4 pb-24">
       {filteredStores.length === 0 && searchTerm === '' ? (
         <EmptyState 
           icon={<BuildingStorefrontIcon />}
@@ -66,7 +66,23 @@ const StoresPage: React.FC = () => {
           ))}
         </div>
       )}
-      <AddItemButton onClick={() => { setEditingStore(undefined); setShowModal(true); }} text="Add Store" />
+      
+      {/* Bottom Action Bar with Search and Add Store */}
+      <BottomActionBar
+        searchValue={searchTerm || ''}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search stores..."
+        actionButton={
+          <Button 
+            onClick={() => { setEditingStore(undefined); setShowModal(true); }} 
+            leftIcon={<PlusIcon />}
+            className="rounded-full"
+          >
+            Add Store
+          </Button>
+        }
+      />
+      
       <Modal isOpen={showModal} onClose={() => { setShowModal(false); setEditingStore(undefined); }} title={editingStore ? "Edit Store" : "Add New Store"}>
         <StoreForm initialStore={editingStore} onSave={handleSave} onClose={() => { setShowModal(false); setEditingStore(undefined); }} />
       </Modal>

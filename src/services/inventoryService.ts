@@ -70,6 +70,16 @@ class InventoryService {
     await apiService.delete(`/inventory/${id}`);
   }
 
+  async batchEmptyInventoryItems(ids: string[]): Promise<{ emptied_count: number; emptied_items: { id: string; ingredient_name: string }[] }> {
+    return apiService.put<{ emptied_count: number; emptied_items: { id: string; ingredient_name: string }[] }>('/inventory/batch/empty', { ids });
+  }
+
+  async batchDeleteInventoryItems(ids: string[]): Promise<{ deleted_count: number; deleted_items: { id: string; ingredient_name: string }[] }> {
+    return apiService.delete<{ deleted_count: number; deleted_items: { id: string; ingredient_name: string }[] }>('/inventory/batch', { 
+      data: { ids } 
+    });
+  }
+
   async getLowStockItems(): Promise<InventoryItemAPI[]> {
     return apiService.get<{ low_stock_items: InventoryItemAPI[] }>('/inventory/low-stock').then(response => response.low_stock_items);
   }

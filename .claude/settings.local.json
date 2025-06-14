@@ -45,7 +45,9 @@
       "mcp__browsermcp__browser_wait",
       "mcp__browsermcp__browser_get_console_logs",
       "mcp__browser-tools__getNetworkErrors",
-      "mcp__browsermcp__browser_press_key"
+      "mcp__browsermcp__browser_press_key",
+      "mcp__browser-tools__takeScreenshot",
+      "mcp__puppeteer__puppeteer_click"
     ]
   },
   "enableAllProjectMcpServers": false

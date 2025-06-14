@@ -37,8 +37,8 @@ export const useAuthAPI = () => {
           
           // Try to get preferences (optional)
           let preferences: UserPreferences | undefined;
+          // const apiPreferences = await authService.getUserPreferences();
           try {
-            const apiPreferences = await authService.getUserPreferences();
             preferences = {
               defaultStoreId: undefined, // API doesn't have this yet
               measurementSystem: undefined, // API doesn't have this yet
@@ -140,7 +140,7 @@ export const useAuthAPI = () => {
   }, []);
 
   const updateUserProfile = useCallback(async (
-    userId: string, 
+    _userId: string, 
     data: Partial<Pick<User, 'name' | 'email' | 'passwordHash'>>
   ): Promise<boolean> => {
     try {
@@ -203,6 +203,14 @@ export const useAuthAPI = () => {
     return authService.isAuthenticated() && currentUser !== null;
   }, [currentUser]);
 
+  const getUserPreferences = useCallback(async (
+    _userId: string,
+  ): Promise<UserPreferences | undefined> => {
+    // Implementation of getUserPreferences method
+    // This is a placeholder and should be implemented based on your requirements
+    return undefined;
+  }, []);
+
   return {
     currentUser,
     users: [], // Empty in API mode, but kept for compatibility
@@ -216,5 +224,6 @@ export const useAuthAPI = () => {
     // Additional API-specific methods
     refreshToken: authService.refreshToken,
     getCurrentUser: authService.getCurrentUser,
+    getUserPreferences,
   };
 };

@@ -7,7 +7,7 @@ import {
   ShoppingCartIcon, ArchiveBoxIcon, ArrowPathIcon, TrashIcon, 
   PlusIcon, XMarkIcon, PencilIcon, MagnifyingGlassIcon 
 } from '../../../constants';
-import { Modal, Button, Card, EmptyState } from '../../../components';
+import { Modal, Button, Card, EmptyState, BottomActionBar } from '../../../components';
 
 const ShoppingListsPageAPI: React.FC = () => {
   const navigate = useNavigate();
@@ -22,7 +22,7 @@ const ShoppingListsPageAPI: React.FC = () => {
     bulkArchiveShoppingLists, 
     bulkDeleteArchivedShoppingLists 
   } = useShoppingLists();
-  const { searchTerm } = useAppState();
+  const { searchTerm, setSearchTerm } = useAppState();
   
   type ShoppingListTab = 'active' | 'completed' | 'archived';
   const [activeTab, setActiveTab] = useState<ShoppingListTab>('active');
@@ -220,7 +220,7 @@ const ShoppingListsPageAPI: React.FC = () => {
   const hasLists = activeLists.length > 0 || completedLists.length > 0 || archivedListsFiltered.length > 0;
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-4 pb-24">
       {/* Bulk Actions Bar */}
       {selectionMode && (
         <div className="sticky top-0 bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex justify-between items-center">
@@ -340,6 +340,22 @@ const ShoppingListsPageAPI: React.FC = () => {
           {currentLists.map(renderShoppingListCard)}
         </div>
       )}
+
+      {/* Bottom Action Bar with Search and New List */}
+      <BottomActionBar
+        searchValue={searchTerm || ''}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search shopping lists..."
+        actionButton={
+          <Button 
+            onClick={() => navigate('/generate_shopping_list')} 
+            leftIcon={<PlusIcon />}
+            className="rounded-full"
+          >
+            New List
+          </Button>
+        }
+      />
 
       {/* Confirmation Modals */}
       <Modal 

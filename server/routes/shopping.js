@@ -8,6 +8,7 @@ import {
   deleteShoppingList,
   getShoppingListItems,
   addShoppingListItem,
+  bulkCreateItems,
   updateShoppingListItem,
   deleteShoppingListItem,
   bulkUpdateItems,
@@ -271,6 +272,61 @@ router.post('/lists/:id/items', validate({
   params: commonSchemas.uuidParam, 
   body: shoppingSchemas.createItem 
 }), addShoppingListItem);
+
+/**
+ * @swagger
+ * /api/shopping/lists/{id}/items/bulk-create:
+ *   post:
+ *     summary: Add multiple items to a shopping list at once
+ *     tags: [Shopping List Items]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - items
+ *             properties:
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - ingredient_name
+ *                   properties:
+ *                     ingredient_name:
+ *                       type: string
+ *                       maxLength: 255
+ *                     quantity:
+ *                       type: number
+ *                       minimum: 0
+ *                     unit:
+ *                       type: string
+ *                       maxLength: 50
+ *                     notes:
+ *                       type: string
+ *     responses:
+ *       201:
+ *         description: Items added to shopping list successfully
+ *       404:
+ *         description: Shopping list not found
+ *       409:
+ *         description: One or more items with these names already exist in the list
+ */
+router.post('/lists/:id/items/bulk-create', validate({ 
+  params: commonSchemas.uuidParam, 
+  body: shoppingSchemas.bulkCreateItems 
+}), bulkCreateItems);
 
 /**
  * @swagger

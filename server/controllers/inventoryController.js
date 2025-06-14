@@ -378,15 +378,45 @@ export const deleteInventoryItem = async (req, res, next) => {
     const { id } = req.params;
     const userId = req.user.id;
 
-    // Check if inventory item exists and belongs to user
-    const existingItem = await prisma.user_inventory.findFirst({
-      where: {
-        id,
-        user_id: userId
+    // Use a transaction to prevent race conditions
+    const result = await prisma.$transaction(async (prisma) => {
+      // Check if inventory item exists and belongs to user
+      const existingItem = await prisma.user_inventory.findFirst({
+        where: {
+          id,
+          user_id: userId
+        }
+      });
+
+      if (!existingItem) {
+        throw new Error('ITEM_NOT_FOUND');
+      }
+
+      // Delete the inventory item with specific ID and user verification
+      const deleteResult = await prisma.user_inventory.deleteMany({
+        where: {
+          id,
+          user_id: userId
+        }
+      });
+
+      if (deleteResult.count === 0) {
+        throw new Error('ITEM_ALREADY_DELETED');
+      }
+
+      return { deletedItem: existingItem };
+    });
+
+    res.status(200).json({
+      message: 'Inventory item deleted successfully',
+      deleted_item: {
+        id: result.deletedItem.id,
+        ingredient_name: result.deletedItem.ingredient_name
       }
     });
 
-    if (!existingItem) {
+  } catch (error) {
+    if (error.message === 'ITEM_NOT_FOUND') {
       return res.status(404).json({
         error: {
           message: 'Inventory item not found',
@@ -394,17 +424,16 @@ export const deleteInventoryItem = async (req, res, next) => {
         }
       });
     }
+    
+    if (error.message === 'ITEM_ALREADY_DELETED') {
+      return res.status(409).json({
+        error: {
+          message: 'Inventory item has already been deleted',
+          statusCode: 409
+        }
+      });
+    }
 
-    // Delete the inventory item
-    await prisma.user_inventory.delete({
-      where: { id }
-    });
-
-    res.status(200).json({
-      message: 'Inventory item deleted successfully'
-    });
-
-  } catch (error) {
     next(error);
   }
 };
@@ -528,6 +557,145 @@ export const getExpiringItems = async (req, res, next) => {
     });
 
   } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Batch empty inventory items (set quantity to 0)
+ * PUT /api/inventory/batch/empty
+ */
+export const batchEmptyInventoryItems = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    const userId = req.user.id;
+
+    // Use a transaction to ensure all updates succeed or fail together
+    const result = await prisma.$transaction(async (prisma) => {
+      // First, verify all items exist and belong to the user
+      const existingItems = await prisma.user_inventory.findMany({
+        where: {
+          id: { in: ids },
+          user_id: userId
+        },
+        select: {
+          id: true,
+          ingredient_name: true,
+          quantity: true
+        }
+      });
+
+      // Check if any items were not found
+      const foundIds = existingItems.map(item => item.id);
+      const notFoundIds = ids.filter(id => !foundIds.includes(id));
+
+      if (notFoundIds.length > 0) {
+        throw new Error(`ITEMS_NOT_FOUND:${notFoundIds.join(',')}`);
+      }
+
+      // Empty all items (set quantity to 0)
+      const updateResult = await prisma.user_inventory.updateMany({
+        where: {
+          id: { in: ids },
+          user_id: userId
+        },
+        data: {
+          quantity: 0,
+          updated_at: new Date()
+        }
+      });
+
+      return {
+        emptiedItems: existingItems,
+        emptiedCount: updateResult.count
+      };
+    });
+
+    res.status(200).json({
+      message: `Successfully emptied ${result.emptiedCount} inventory items`,
+      emptied_items: result.emptiedItems,
+      emptied_count: result.emptiedCount
+    });
+
+  } catch (error) {
+    if (error.message.startsWith('ITEMS_NOT_FOUND:')) {
+      const notFoundIds = error.message.split(':')[1].split(',');
+      return res.status(404).json({
+        error: {
+          message: 'Some inventory items were not found or do not belong to the user',
+          statusCode: 404,
+          not_found_ids: notFoundIds
+        }
+      });
+    }
+
+    next(error);
+  }
+};
+
+/**
+ * Batch delete inventory items (permanently remove from database)
+ * DELETE /api/inventory/batch
+ */
+export const batchDeleteInventoryItems = async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    const userId = req.user.id;
+
+    // Use a transaction to ensure all deletions succeed or fail together
+    const result = await prisma.$transaction(async (prisma) => {
+      // First, verify all items exist and belong to the user
+      const existingItems = await prisma.user_inventory.findMany({
+        where: {
+          id: { in: ids },
+          user_id: userId
+        },
+        select: {
+          id: true,
+          ingredient_name: true
+        }
+      });
+
+      // Check if any items were not found
+      const foundIds = existingItems.map(item => item.id);
+      const notFoundIds = ids.filter(id => !foundIds.includes(id));
+
+      if (notFoundIds.length > 0) {
+        throw new Error(`ITEMS_NOT_FOUND:${notFoundIds.join(',')}`);
+      }
+
+      // Delete all items
+      const deleteResult = await prisma.user_inventory.deleteMany({
+        where: {
+          id: { in: ids },
+          user_id: userId
+        }
+      });
+
+      return {
+        deletedItems: existingItems,
+        deletedCount: deleteResult.count
+      };
+    });
+
+    res.status(200).json({
+      message: `Successfully deleted ${result.deletedCount} inventory items`,
+      deleted_items: result.deletedItems,
+      deleted_count: result.deletedCount
+    });
+
+  } catch (error) {
+    if (error.message.startsWith('ITEMS_NOT_FOUND:')) {
+      const notFoundIds = error.message.split(':')[1].split(',');
+      return res.status(404).json({
+        error: {
+          message: 'Some inventory items were not found or do not belong to the user',
+          statusCode: 404,
+          not_found_ids: notFoundIds
+        }
+      });
+    }
+
     next(error);
   }
 };

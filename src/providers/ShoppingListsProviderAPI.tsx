@@ -108,43 +108,53 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
       
       console.log('Shopping list created successfully:', newList.id);
       
-      // Add items sequentially to prevent server overload
+      // Add items using bulk create to avoid rate limiting
       if (list.items && list.items.length > 0) {
-        console.log(`Adding ${list.items.length} items sequentially...`);
+        console.log(`Adding ${list.items.length} items using bulk create...`);
         
-        for (let i = 0; i < list.items.length; i++) {
-          const item = list.items[i];
-          let retryCount = 0;
-          const maxRetries = 3;
+        try {
+          const itemsToCreate = list.items.map(item => ({
+            ingredient_name: item.ingredientName,
+            quantity: item.neededQuantity,
+            unit: item.unit,
+            notes: item.notes,
+          }));
+
+          const createdItems = await shoppingListsService.bulkCreateItems(newList.id, itemsToCreate);
+          console.log(`✅ Successfully added ${createdItems.length}/${list.items.length} items`);
           
-          while (retryCount < maxRetries) {
+          if (createdItems.length < list.items.length) {
+            console.warn(`Some items may have been skipped due to duplicates`);
+          }
+        } catch (error) {
+          console.error('❌ Failed to bulk create items:', error);
+          // If bulk creation fails, fall back to individual creation with better error handling
+          console.log('Falling back to individual item creation...');
+          
+          let successCount = 0;
+          const errors = [];
+          
+          for (const item of list.items) {
             try {
-              console.log(`Adding item ${i + 1}/${list.items.length}: ${item.ingredientName}`);
-              
               await shoppingListsService.addShoppingListItem(newList.id, {
                 ingredient_name: item.ingredientName,
                 quantity: item.neededQuantity,
                 unit: item.unit,
                 notes: item.notes,
               });
+              successCount++;
               
-              console.log(`✅ Successfully added: ${item.ingredientName}`);
-              break; // Success, move to next item
-              
-            } catch (error) {
-              retryCount++;
-              console.error(`❌ Failed to add item ${item.ingredientName} (attempt ${retryCount}/${maxRetries}):`, error);
-              
-              if (retryCount >= maxRetries) {
-                console.error(`Failed to add ${item.ingredientName} after ${maxRetries} attempts`);
-                // Continue with next item instead of failing the entire operation
-              } else {
-                // Wait before retrying (exponential backoff)
-                const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000);
-                console.log(`Retrying in ${delay}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              }
+              // Small delay to avoid overwhelming the server
+              await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (itemError) {
+              console.error(`Failed to add ${item.ingredientName}:`, itemError);
+              errors.push({ item: item.ingredientName, error: itemError });
             }
+          }
+          
+          console.log(`Fallback completed: ${successCount}/${list.items.length} items added`);
+          if (errors.length > 0) {
+            console.warn(`Failed to add ${errors.length} items`);
           }
         }
       }
@@ -153,7 +163,6 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
       const finalItemsResponse = await shoppingListsService.getShoppingListItems(newList.id);
       const finalList = transformShoppingListFromAPI(newList, finalItemsResponse.items);
       
-      console.log(`Shopping list creation completed. Added ${finalItemsResponse.items.length}/${list.items?.length || 0} items successfully`);
       return finalList;
     },
     onSuccess: (newList) => {
@@ -161,6 +170,10 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
         ...oldLists,
         newList
       ]);
+      
+      // Cross-provider cache invalidation: invalidate inventory and recipes when shopping lists change
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['recipes'] });
     },
   });
 

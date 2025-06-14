@@ -57,10 +57,7 @@ const EmailVerificationPage: React.FC = () => {
     verifyEmail();
   }, [token]);
 
-  const handleResendVerification = async () => {
-    // TODO: Implement resend verification functionality
-    console.log('Resend verification not implemented yet');
-  };
+  // const handleResendVerification = async () => {
 
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">

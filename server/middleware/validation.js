@@ -150,8 +150,8 @@ export const recipeSchemas = {
     difficulty_level: z.enum(['easy', 'medium', 'hard']).optional(),
     cuisine_type: z.string().max(100).optional(),
     meal_type: z.string().max(50).optional(),
-    image_url: z.string().url().optional(),
-    source_url: z.string().url().optional(),
+    image_url: z.string().url().optional().or(z.literal('')),
+    source_url: z.string().url().optional().or(z.literal('')),
     ingredients: z.array(z.object({
       ingredient_name: z.string().min(1).max(255),
       quantity: z.number().positive().optional(),
@@ -170,8 +170,8 @@ export const recipeSchemas = {
     difficulty_level: z.enum(['easy', 'medium', 'hard']).optional(),
     cuisine_type: z.string().max(100).optional(),
     meal_type: z.string().max(50).optional(),
-    image_url: z.string().url().optional(),
-    source_url: z.string().url().optional()
+    image_url: z.string().url().optional().or(z.literal('')),
+    source_url: z.string().url().optional().or(z.literal(''))
   }),
 
   searchQuery: z.object({
@@ -198,6 +198,28 @@ export const recipeSchemas = {
     quantity: z.number().positive().optional(),
     unit: z.string().max(50).optional(),
     notes: z.string().optional()
+  }),
+
+  import: z.object({
+    title: z.string().min(1, 'Title is required').max(255),
+    description: z.string().optional(),
+    instructions: z.string().min(1, 'Instructions are required'),
+    prep_time: z.number().int().min(0).optional(),
+    cook_time: z.number().int().min(0).optional(),
+    servings: z.number().int().min(1).optional(),
+    difficulty_level: z.enum(['easy', 'medium', 'hard']).optional(),
+    cuisine_type: z.string().max(100).optional(),
+    meal_type: z.string().max(50).optional(),
+    image_url: z.string().url().optional().or(z.literal('')),
+    source_url: z.string().url().optional().or(z.literal('')),
+    source_name: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    ingredients: z.array(z.object({
+      ingredient_name: z.string().min(1).max(255),
+      quantity: z.number().positive().optional(),
+      unit: z.string().max(50).optional(),
+      notes: z.string().optional()
+    })).min(1, 'At least one ingredient is required')
   })
 };
 
@@ -230,6 +252,14 @@ export const inventorySchemas = {
     sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
     page: z.string().optional().transform(val => val ? parseInt(val, 10) : 1),
     limit: z.string().optional().transform(val => val ? parseInt(val, 10) : 20),
+  }),
+
+  batchDelete: z.object({
+    ids: z.array(z.string().uuid('Invalid inventory item ID format')).min(1, 'At least one item ID must be provided')
+  }),
+
+  batchEmpty: z.object({
+    ids: z.array(z.string().uuid('Invalid inventory item ID format')).min(1, 'At least one item ID must be provided')
   })
 };
 
@@ -265,6 +295,22 @@ export const shoppingSchemas = {
       id: z.string().uuid(),
       is_purchased: z.boolean()
     }))
+  }),
+
+  bulkCreateItems: z.object({
+    items: z.array(z.object({
+      ingredient_name: z.string().min(1, 'Ingredient name is required').max(255),
+      quantity: z.number().positive().optional(),
+      unit: z.string().max(50).optional(),
+      notes: z.string().optional()
+    })).min(1, 'At least one item must be provided')
+  }),
+
+  purchaseAndComplete: z.object({
+    purchased_items: z.array(z.object({
+      item_id: z.string().uuid('Invalid item ID format'),
+      quantity: z.number().positive('Quantity must be positive')
+    })).min(1, 'At least one item must be provided')
   })
 };
 
@@ -284,8 +330,9 @@ export const storeSchemas = {
 
   searchQuery: z.object({
     search: z.string().optional(),
-    sortBy: z.enum(['name', 'location', 'created_at']).optional().default('created_at')
-  }).merge(commonSchemas.searchFilter)
+    sortBy: z.enum(['name', 'location', 'created_at']).optional().default('created_at'),
+    sortOrder: z.enum(['asc', 'desc']).optional().default('desc')
+  })
 };
 
 // Meal planning validation schemas

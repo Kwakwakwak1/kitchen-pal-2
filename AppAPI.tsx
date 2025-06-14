@@ -27,7 +27,7 @@ import ShoppingListGeneratorPageAPI from './src/pages/shopping-lists/ShoppingLis
 import InventoryPageAPI from './src/pages/inventory/InventoryPageAPI';
 
 // Import UI components and utilities
-import { Button, SearchInput } from './components';
+import { Button } from './components';
 import { APP_NAME, DEFAULT_AVATAR_IMAGE } from './constants';
 import { 
   BookOpenIcon, ArchiveBoxIcon, ShoppingCartIcon, BuildingStorefrontIcon,
@@ -49,7 +49,7 @@ const AppLayoutAPI: React.FC = () => {
   
   // Use proper hooks from API providers
   const { currentUser, logout, isLoadingAuth } = useAuth();
-  const { activeView, setActiveView, searchTerm, setSearchTerm } = useAppState();
+  const { activeView, setActiveView } = useAppState();
   
   // Sync activeView with current route
   React.useEffect(() => {
@@ -68,6 +68,7 @@ const AppLayoutAPI: React.FC = () => {
   
   // Note: navigateToView removed - navigation handled through Link components
   
+  // Note: Search functionality moved to individual page components for better UX consistency
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems: Array<{ view: ActiveView; label: string; icon: ReactElement<{ className?: string }> }> = [
@@ -77,8 +78,6 @@ const AppLayoutAPI: React.FC = () => {
     { view: 'shopping_lists', label: 'Shopping Lists', icon: <ShoppingCartIcon /> },
     { view: 'stores', label: 'Stores', icon: <BuildingStorefrontIcon /> },
   ];
-
-  const showSearchBar = currentUser && ['recipes', 'inventory', 'shopping_lists', 'stores', 'generate_shopping_list'].includes(activeView);
 
   if (isLoadingAuth) {
     return (
@@ -136,28 +135,10 @@ const AppLayoutAPI: React.FC = () => {
                   <Link to="/signup" className="px-3 py-2 rounded-md text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 flex items-center space-x-2"><UserPlusIcon className="w-5 h-5"/><span>Sign Up</span></Link>
                 </>
               )}
-              {showSearchBar && (
-                <div className="w-full md:w-64 lg:w-80 ml-4">
-                  <SearchInput 
-                    value={searchTerm} 
-                    onChange={setSearchTerm} 
-                    placeholder={`Search ${activeView.replace(/_/g, ' ').replace('detail', '')}...`}
-                  />
-                </div>
-              )}
             </div>
             
-            {/* Mobile Menu Button & Search (if applicable) */}
+            {/* Mobile Menu Button - Search removed */}
             <div className="md:hidden flex items-center"> 
-               {showSearchBar && !mobileMenuOpen && (
-                <div className="w-auto mr-2"> 
-                   <SearchInput 
-                    value={searchTerm} 
-                    onChange={setSearchTerm} 
-                    placeholder="Search..."
-                  />
-                </div>
-              )}
                <button type="button" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-500 hover:text-gray-700 focus:outline-none p-2" aria-label="Open mobile menu" aria-expanded={mobileMenuOpen}>
                  {mobileMenuOpen ? (
                     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -173,15 +154,6 @@ const AppLayoutAPI: React.FC = () => {
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-gray-200 bg-white shadow-lg">
               <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-              {currentUser && showSearchBar && (
-                 <div className="p-2">
-                    <SearchInput 
-                      value={searchTerm} 
-                      onChange={setSearchTerm} 
-                      placeholder={`Search ${activeView.replace(/_/g, ' ').replace('detail', '')}...`}
-                    />
-                  </div>
-              )}
               {currentUser ? (
                 <>
                   {navItems.map(item => (

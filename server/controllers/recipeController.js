@@ -726,3 +726,159 @@ export const deleteRecipeIngredient = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * Import recipe from JSON data
+ * POST /api/recipes/import
+ */
+export const importRecipeFromJson = async (req, res, next) => {
+  try {
+    const { 
+      title, 
+      description, 
+      instructions, 
+      prep_time, 
+      cook_time, 
+      servings, 
+      difficulty_level, 
+      cuisine_type, 
+      meal_type, 
+      image_url, 
+      source_url,
+      source_name,
+      tags,
+      ingredients 
+    } = req.body;
+    const userId = req.user.id;
+
+    // Check if recipe with same title already exists for this user
+    const existingRecipe = await prisma.recipes.findFirst({
+      where: {
+        user_id: userId,
+        title: {
+          equals: title,
+          mode: 'insensitive'
+        }
+      }
+    });
+
+    if (existingRecipe) {
+      return res.status(409).json({
+        error: {
+          message: 'A recipe with this title already exists',
+          statusCode: 409
+        }
+      });
+    }
+
+    // Determine meal type from tags if not provided
+    let mealTypeToUse = meal_type;
+    if (!mealTypeToUse && tags && tags.length > 0) {
+      const mealTypeMap = {
+        'breakfast': 'breakfast',
+        'lunch': 'lunch', 
+        'dinner': 'dinner',
+        'dessert': 'dessert',
+        'snack': 'snack',
+        'appetizer': 'appetizer',
+        'main': 'main',
+        'side': 'side'
+      };
+      
+      for (const tag of tags) {
+        const lowerTag = tag.toLowerCase();
+        if (mealTypeMap[lowerTag]) {
+          mealTypeToUse = mealTypeMap[lowerTag];
+          break;
+        }
+      }
+    }
+
+    // Create recipe with ingredients in a transaction
+    const result = await executeTransaction(async (prisma) => {
+      // Create the recipe
+      const recipe = await prisma.recipes.create({
+        data: {
+          user_id: userId,
+          title,
+          description,
+          instructions,
+          prep_time,
+          cook_time,
+          servings,
+          difficulty_level,
+          cuisine_type,
+          meal_type: mealTypeToUse,
+          is_public: false,
+          image_url,
+          source_url
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          instructions: true,
+          prep_time: true,
+          cook_time: true,
+          servings: true,
+          difficulty_level: true,
+          cuisine_type: true,
+          meal_type: true,
+          is_public: true,
+          image_url: true,
+          source_url: true,
+          created_at: true,
+          updated_at: true
+        }
+      });
+
+      // Add ingredients
+      let recipeIngredients = [];
+      if (ingredients && ingredients.length > 0) {
+        const ingredientData = ingredients.map(ingredient => ({
+          recipe_id: recipe.id,
+          ingredient_name: ingredient.ingredient_name,
+          quantity: ingredient.quantity ? parseFloat(ingredient.quantity) : null,
+          unit: ingredient.unit,
+          notes: ingredient.notes
+        }));
+
+        await prisma.recipe_ingredients.createMany({
+          data: ingredientData
+        });
+
+        // Fetch the created ingredients
+        recipeIngredients = await prisma.recipe_ingredients.findMany({
+          where: { recipe_id: recipe.id },
+          select: {
+            id: true,
+            ingredient_name: true,
+            quantity: true,
+            unit: true,
+            notes: true,
+            created_at: true
+          },
+          orderBy: { created_at: 'asc' }
+        });
+      }
+
+      return {
+        ...recipe,
+        recipe_ingredients: recipeIngredients.map(ingredient => ({
+          ...ingredient,
+          quantity: ingredient.quantity ? parseFloat(ingredient.quantity) : null
+        })),
+        tags: tags || [],
+        source_name: source_name
+      };
+    });
+
+    res.status(201).json({
+      message: 'Recipe imported successfully',
+      recipe: result
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};

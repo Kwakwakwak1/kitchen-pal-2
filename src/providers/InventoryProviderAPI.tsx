@@ -76,6 +76,10 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
           item
         ]);
       }
+      
+      // Cross-provider cache invalidation: invalidate recipes when inventory changes
+      queryClient.invalidateQueries({ queryKey: ['recipes'] });
+      console.log(`Invalidated recipes cache after ${isUpdate ? 'updating' : 'adding'} inventory item: ${item.ingredientName}`);
     },
   });
 
@@ -94,15 +98,73 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
       queryClient.setQueryData(['inventory'], (oldInventory: InventoryItem[] = []) =>
         oldInventory.map(invItem => invItem.id === updatedItem.id ? updatedItem : invItem)
       );
+      
+      // Cross-provider cache invalidation: invalidate recipes when inventory changes
+      queryClient.invalidateQueries({ queryKey: ['recipes'] });
+      console.log(`Invalidated recipes cache after updating inventory item: ${updatedItem.ingredientName}`);
     },
   });
 
   const deleteInventoryItemMutation = useMutation({
-    mutationFn: (itemId: string) => inventoryService.deleteInventoryItem(itemId),
+    mutationFn: async (itemId: string) => {
+      // Add retry logic for delete operations to handle 503/404 errors
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        try {
+          const result = await inventoryService.deleteInventoryItem(itemId);
+          console.log(`✅ Successfully deleted inventory item: ${itemId}`);
+          return result;
+        } catch (error: any) {
+          retryCount++;
+          console.error(`❌ Failed to delete inventory item ${itemId} (attempt ${retryCount}/${maxRetries}):`, error);
+          
+          // If it's a 404, the item might already be deleted, so we can consider it a success
+          if (error.response?.status === 404) {
+            console.log(`Item ${itemId} not found (404) - considering deletion successful`);
+            return; // Treat as success
+          }
+          
+          if (retryCount >= maxRetries) {
+            // If all retries failed, check if the item was actually deleted by refetching the inventory
+            console.log(`Checking if item ${itemId} was actually deleted despite errors...`);
+            try {
+              const response = await inventoryService.getInventory();
+              const stillExists = response.inventory.some(item => item.id === itemId);
+              if (!stillExists) {
+                console.log(`Item ${itemId} was actually deleted successfully despite errors`);
+                return; // Treat as success
+              }
+            } catch (checkError) {
+              console.error('Error checking if item was deleted:', checkError);
+            }
+            
+            throw error; // Re-throw the original error
+          } else {
+            // Wait before retrying
+            const delay = 1000 * Math.pow(2, retryCount - 1); // Exponential backoff
+            console.log(`Retrying delete in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
+      }
+    },
     onSuccess: (_, deletedItemId) => {
+      // Update local cache
       queryClient.setQueryData(['inventory'], (oldInventory: InventoryItem[] = []) =>
         oldInventory.filter(item => item.id !== deletedItemId)
       );
+      
+      // Cross-provider cache invalidation: invalidate recipes when inventory changes
+      queryClient.invalidateQueries({ queryKey: ['recipes'] });
+      console.log(`Invalidated recipes cache after deleting inventory item: ${deletedItemId}`);
+    },
+    onError: (error, deletedItemId) => {
+      console.error(`Failed to delete inventory item ${deletedItemId} after all retries:`, error);
+      
+      // Optionally show user feedback here
+      // For now, we'll let the UI component handle the error display
     },
   });
 
@@ -212,7 +274,7 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
     };
   };
 
-  const deductIngredientsForPreparation = (recipe: Recipe, preparedServings: number) => {
+  const deductIngredientsForPreparation = async (recipe: Recipe, preparedServings: number) => {
     const scalingFactor = preparedServings / recipe.defaultServings;
     const deductedIngredients: Array<{
       name: string;
@@ -232,7 +294,7 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
       };
     }
 
-    // Perform deductions
+    // Perform deductions sequentially to avoid rate limiting
     for (const ingredient of recipe.ingredients) {
       const neededQuantity = ingredient.quantity * scalingFactor;
       const normalizedName = normalizeIngredientName(ingredient.ingredientName);
@@ -262,20 +324,40 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
         continue;
       }
 
-      // Perform deduction
-      const newQuantity = Math.max(0, item.quantity - deductableQuantity);
-      
-      updateInventoryItem({
-        ...item,
-        quantity: newQuantity
-      });
+      // Perform deduction sequentially with rate limiting
+      try {
+        const newQuantity = Math.max(0, item.quantity - deductableQuantity);
+        
+        await new Promise((resolve, reject) => {
+          updateInventoryItemMutation.mutate({
+            ...item,
+            quantity: newQuantity
+          }, {
+            onSuccess: () => {
+              deductedIngredients.push({
+                name: ingredient.ingredientName,
+                amountDeducted: neededQuantity,
+                unit: ingredient.unit,
+                remainingInInventory: newQuantity,
+              });
+              resolve(undefined);
+            },
+            onError: (error) => {
+              console.error(`Failed to update ${ingredient.ingredientName}:`, error);
+              errors.push(`Failed to update ${ingredient.ingredientName}: ${error.message}`);
+              reject(error);
+            }
+          });
+        });
 
-      deductedIngredients.push({
-        name: ingredient.ingredientName,
-        amountDeducted: neededQuantity,
-        unit: ingredient.unit,
-        remainingInInventory: newQuantity,
-      });
+        // Add a small delay between requests to avoid rate limiting
+        if (recipe.ingredients.indexOf(ingredient) < recipe.ingredients.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay between requests
+        }
+      } catch (error) {
+        console.error(`Error updating inventory for ${ingredient.ingredientName}:`, error);
+        // Continue with next ingredient even if one fails
+      }
     }
 
     return {

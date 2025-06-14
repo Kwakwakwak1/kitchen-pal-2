@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Recipe, ShoppingListItem, Unit } from '../../../types';
-import { type ScaledIngredient } from '../../../utils/recipeScaling';
+import { type ScaledIngredient, scaleIngredients } from '../../../utils/recipeScaling';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecipes } from '../../providers/RecipesProviderAPI';
 import { useInventory } from '../../providers/InventoryProviderAPI';
@@ -10,7 +10,6 @@ import { BookOpenIcon, ArrowLeftIcon, PencilIcon, SparklesIcon, ShoppingCartIcon
 import { Modal, Button, InputField, Card, Alert, EmptyState } from '../../../components';
 import { ServingSizeSelector } from '../../../components/ServingSizeSelector';
 import { ScaledIngredientsList } from '../../../components/ScaledIngredientsList';
-import { scaleIngredients } from '../../../utils/recipeScaling';
 import { InteractiveInstructions } from '../../../components/InteractiveInstructions';
 import { analyzeRecipeInventory } from '../../../utils/recipeAnalyzer';
 import RecipeForm from './RecipeForm';
@@ -214,28 +213,37 @@ const RecipeDetailPageAPI: React.FC = () => {
     setShowConfirmationModal(true);
   };
 
-  const handleConfirmPreparation = () => {
+  const handleConfirmPreparation = async () => {
     if (!recipe) return;
-    const result = deductIngredientsForPreparation(recipe, prepareServings);
     
     // Always close the modal first to ensure UI responsiveness
     setShowConfirmationModal(false);
     setPreparationValidation(null);
     
-    if (result.success) {
-      setAlertMessage({
-        type: 'success', 
-        message: `${recipe.name} prepared for ${prepareServings} servings! Ingredients deducted from inventory.`
-      });
+    try {
+      const result = await deductIngredientsForPreparation(recipe, prepareServings);
       
-      // Navigate to dashboard after brief delay to show updated inventory
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 2000);
-    } else {
+      if (result.success) {
+        setAlertMessage({
+          type: 'success', 
+          message: `${recipe.name} prepared for ${prepareServings} servings! Ingredients deducted from inventory.`
+        });
+        
+        // Navigate to dashboard after brief delay to show updated inventory
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 2000);
+      } else {
+        setAlertMessage({
+          type: 'error', 
+          message: `Preparation failed. ${result.errors.length} ingredient(s) could not be deducted: ${result.errors.join(', ')}`
+        });
+      }
+    } catch (error) {
+      console.error('Error during ingredient deduction:', error);
       setAlertMessage({
         type: 'error', 
-        message: `Preparation failed. ${result.errors.length} ingredient(s) could not be deducted: ${result.errors.join(', ')}`
+        message: 'An error occurred while preparing the recipe. Please try again.'
       });
     }
     

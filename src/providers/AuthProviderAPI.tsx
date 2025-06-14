@@ -44,8 +44,8 @@ export const AuthProviderAPI: React.FC<AuthProviderProps> = ({ children }) => {
           
           // Try to get preferences (optional)
           let preferences: UserPreferences | undefined;
+          // const apiPreferences = await authService.getUserPreferences();
           try {
-            const apiPreferences = await authService.getUserPreferences();
             preferences = {
               defaultStoreId: undefined, // API doesn't have this yet
               measurementSystem: undefined, // API doesn't have this yet
@@ -165,7 +165,7 @@ export const AuthProviderAPI: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const updateUserProfile = async (
-    userId: string, 
+    _userId: string, 
     data: Partial<Pick<User, 'name' | 'email' | 'passwordHash'>>
   ): Promise<boolean> => {
     try {
@@ -202,12 +202,12 @@ export const AuthProviderAPI: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const updateUserPreferences = async (
-    userId: string, 
+    _userId: string,
     preferences: Partial<UserPreferences>
   ): Promise<boolean> => {
     try {
       // Update local state immediately for better UX
-      if (currentUser?.id === userId) {
+      if (currentUser?.id === _userId) {
         setCurrentUser(prev => prev ? {
           ...prev,
           preferences: { ...prev.preferences, ...preferences }

@@ -56,6 +56,15 @@ class ShoppingListsService {
       .then(response => response.item);
   }
 
+  async bulkCreateItems(
+    listId: string,
+    items: CreateShoppingListItemRequest[]
+  ): Promise<ShoppingListItemAPI[]> {
+    return apiService.post<{ items: ShoppingListItemAPI[] }>(`/shopping/lists/${listId}/items/bulk-create`, {
+      items
+    }).then(response => response.items);
+  }
+
   async updateShoppingListItem(
     itemId: string, 
     data: UpdateShoppingListItemRequest

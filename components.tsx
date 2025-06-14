@@ -1,4 +1,3 @@
-
 import React, { ReactNode, ReactElement } from 'react';
 import { PlusIcon } from './constants';
 
@@ -274,6 +273,44 @@ export const Alert: React.FC<AlertProps> = ({ message, type = 'info', onClose })
           </svg>
         </button>
       )}
+    </div>
+  );
+};
+
+// Export ConfirmationModal from its file
+export { default as ConfirmationModal } from './src/components/ConfirmationModal';
+
+// Bottom Action Bar for consistent search and action button layout
+interface BottomActionBarProps {
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  searchPlaceholder?: string;
+  actionButton?: React.ReactNode;
+}
+
+export const BottomActionBar: React.FC<BottomActionBarProps> = ({ 
+  searchValue, 
+  onSearchChange, 
+  searchPlaceholder = "Search...", 
+  actionButton 
+}) => {
+  return (
+    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+      <div className="bg-white rounded-full shadow-lg border border-gray-200 p-2 flex items-center space-x-3 min-w-[320px]">
+        <div className="flex-1">
+          <SearchInput 
+            value={searchValue} 
+            onChange={onSearchChange} 
+            placeholder={searchPlaceholder}
+            className="rounded-full"
+          />
+        </div>
+        {actionButton && (
+          <div className="flex-shrink-0">
+            {actionButton}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

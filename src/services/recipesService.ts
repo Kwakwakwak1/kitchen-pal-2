@@ -28,26 +28,25 @@ interface RecipeIngredientAPI {
   // Note: API doesn't have is_optional field, so we'll default to false
 }
 
+// Fixed to match backend API schema
 interface CreateRecipeRequest {
   title: string;
   description?: string;
+  instructions: string;
   prep_time?: number;
   cook_time?: number;
   servings: number;
-  instructions: string;
-  tags?: string[];
   source_name?: string;
   source_url?: string;
   image_url?: string;
-  ingredients: Array<{
+  tags?: string[];
+  ingredients?: {
     ingredient_name: string;
-    quantity: number;
-    unit: string;
-    is_optional?: boolean;
-  }>;
+    quantity?: number;
+    unit?: string;
+    notes?: string;
+  }[];
 }
-
-interface UpdateRecipeRequest extends Partial<CreateRecipeRequest> {}
 
 interface RecipesResponse {
   recipes: RecipeAPI[];
@@ -69,33 +68,41 @@ interface CreateRecipeResponse {
   recipe: RecipeAPI; // recipe_ingredients is included in the recipe object
 }
 
-// Helper function to parse time strings like "25 minutes" or "1 hour 30 minutes" to integer minutes
+interface ImportRecipeRequest {
+  title: string;
+  description?: string;
+  instructions: string;
+  prep_time?: number;
+  cook_time?: number;
+  servings?: number;
+  source_name?: string;
+  source_url?: string;
+  image_url?: string;
+  tags?: string[];
+  ingredients: {
+    ingredient_name: string;
+    quantity?: number;
+    unit?: string;
+    notes?: string;
+  }[];
+}
+
+// Helper function to parse time strings to minutes
 const parseTimeToMinutes = (timeStr?: string): number | undefined => {
   if (!timeStr) return undefined;
   
-  // Handle empty or whitespace-only strings
-  const cleaned = timeStr.trim().toLowerCase();
-  if (!cleaned) return undefined;
-  
+  const timePattern = /(\d+)\s*(hour|hr|minute|min)s?/gi;
   let totalMinutes = 0;
+  let match;
   
-  // Match patterns like "1 hour", "30 minutes", "1 hr 30 min", etc.
-  const hourMatch = cleaned.match(/(\d+)\s*(?:hours?|hrs?|h)\b/);
-  const minuteMatch = cleaned.match(/(\d+)\s*(?:minutes?|mins?|m)\b/);
-  
-  if (hourMatch) {
-    totalMinutes += parseInt(hourMatch[1], 10) * 60;
-  }
-  
-  if (minuteMatch) {
-    totalMinutes += parseInt(minuteMatch[1], 10);
-  }
-  
-  // If no hour/minute patterns found, try to extract just a number and assume it's minutes
-  if (!hourMatch && !minuteMatch) {
-    const numberMatch = cleaned.match(/(\d+)/);
-    if (numberMatch) {
-      totalMinutes = parseInt(numberMatch[1], 10);
+  while ((match = timePattern.exec(timeStr)) !== null) {
+    const value = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    
+    if (unit.startsWith('hour') || unit.startsWith('hr')) {
+      totalMinutes += value * 60;
+    } else if (unit.startsWith('minute') || unit.startsWith('min')) {
+      totalMinutes += value;
     }
   }
   
@@ -140,6 +147,7 @@ const transformRecipeFromAPI = (apiRecipe: RecipeAPI, ingredients: RecipeIngredi
   imageUrl: apiRecipe.image_url,
 });
 
+// Fixed to match backend API schema for creating recipes
 const transformRecipeToAPI = (recipe: Omit<Recipe, 'id'>): CreateRecipeRequest => ({
   title: recipe.name,
   prep_time: parseTimeToMinutes(recipe.prepTime),
@@ -154,7 +162,38 @@ const transformRecipeToAPI = (recipe: Omit<Recipe, 'id'>): CreateRecipeRequest =
     ingredient_name: ing.ingredientName,
     quantity: ing.quantity,
     unit: ing.unit,
-    is_optional: ing.isOptional || false,
+    // Note: Backend doesn't support is_optional yet
+  })),
+});
+
+// Transformation for updates - only includes fields supported by backend
+const transformRecipeToUpdateAPI = (recipe: Recipe) => ({
+  title: recipe.name,
+  description: undefined, // Recipe interface doesn't have description field, but backend supports it
+  prep_time: parseTimeToMinutes(recipe.prepTime),
+  cook_time: parseTimeToMinutes(recipe.cookTime),
+  servings: recipe.defaultServings,
+  instructions: recipe.instructions,
+  source_url: recipe.sourceUrl,
+  image_url: recipe.imageUrl,
+  // Note: source_name, tags, and ingredients are not supported in updates
+  // Ingredients should be updated separately via ingredient endpoints
+});
+
+// Transform Recipe to Import API format
+const transformRecipeToImportAPI = (recipe: Omit<Recipe, 'id' | 'imageUrl'>): ImportRecipeRequest => ({
+  title: recipe.name,
+  instructions: recipe.instructions,
+  prep_time: parseTimeToMinutes(recipe.prepTime),
+  cook_time: parseTimeToMinutes(recipe.cookTime),
+  servings: recipe.defaultServings,
+  source_name: recipe.sourceName,
+  source_url: recipe.sourceUrl,
+  tags: recipe.tags,
+  ingredients: recipe.ingredients.map(ing => ({
+    ingredient_name: ing.ingredientName,
+    quantity: ing.quantity,
+    unit: ing.unit,
   })),
 });
 
@@ -180,13 +219,19 @@ class RecipesService {
   }
 
   async updateRecipe(recipe: Recipe): Promise<Recipe> {
-    const updateData = transformRecipeToAPI(recipe);
-    const response = await apiService.put<{ recipe: RecipeAPI; recipe_ingredients: RecipeIngredientAPI[] }>(`/recipes/${recipe.id}`, updateData);
-    return transformRecipeFromAPI(response.recipe, response.recipe_ingredients);
+    const updateData = transformRecipeToUpdateAPI(recipe);
+    const response = await apiService.put<{ recipe: RecipeAPI; }>(`/recipes/${recipe.id}`, updateData);
+    return transformRecipeFromAPI(response.recipe, response.recipe.recipe_ingredients || []);
   }
 
   async deleteRecipe(id: string): Promise<void> {
     await apiService.delete(`/recipes/${id}`);
+  }
+
+  async importRecipe(recipe: Omit<Recipe, 'id' | 'imageUrl'>): Promise<Recipe> {
+    const importData = transformRecipeToImportAPI(recipe);
+    const response = await apiService.post<CreateRecipeResponse>('/recipes/import', importData);
+    return transformRecipeFromAPI(response.recipe, response.recipe.recipe_ingredients || []);
   }
 }
 

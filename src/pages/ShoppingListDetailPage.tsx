@@ -44,9 +44,13 @@ export const ShoppingListDetailPage: React.FC = () => {
     mutationFn: async ({ itemId, isPurchased }: { itemId: string; isPurchased: boolean }) => {
       return await shoppingListsService.updateShoppingListItem(itemId, { is_purchased: isPurchased });
     },
-    onSuccess: (response: any, { isPurchased }) => {
-      // Invalidate and refetch the shopping lists to get updated data
+    onSuccess: (response: any) => {
+      // Invalidate and refetch multiple query types to ensure state consistency
       queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['recipes'] });
+      
+      console.log('Invalidated all related caches after updating shopping list item');
       
       // Check if response contains completion information
       if (response && typeof response === 'object' && 'is_completed' in response && response.is_completed) {
@@ -79,8 +83,12 @@ export const ShoppingListDetailPage: React.FC = () => {
       return await shoppingListsService.purchaseAndComplete(shoppingList.id, purchaseData);
     },
     onSuccess: (response) => {
-      // Invalidate and refetch the shopping lists
+      // Comprehensive cache invalidation to ensure all related data is refreshed
       queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['recipes'] });
+      
+      console.log('Invalidated all related caches after bulk purchase and complete');
       
       const itemCount = response.updated_items.length;
       setAlertMessage({
@@ -167,6 +175,7 @@ export const ShoppingListDetailPage: React.FC = () => {
             quantity: item.neededQuantity,
             unit: item.unit,
           }, true);
+          console.log(`Added ${item.ingredientName} to inventory`);
         } catch (error) {
           console.error('Error adding to inventory:', error);
         }
@@ -191,6 +200,14 @@ export const ShoppingListDetailPage: React.FC = () => {
     if (markAllItemsAsPurchased) {
       try {
         await markAllItemsAsPurchased(shoppingList.id);
+        
+        // Force cache invalidation after the operation
+        queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+        queryClient.invalidateQueries({ queryKey: ['inventory'] });
+        queryClient.invalidateQueries({ queryKey: ['recipes'] });
+        
+        console.log('Forced cache invalidation after markAllItemsAsPurchased');
+        
         setAlertMessage({
           type: 'success',
           message: 'All items marked as purchased and added to inventory! Shopping list completed! Redirecting to recipes...'

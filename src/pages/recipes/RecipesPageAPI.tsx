@@ -7,7 +7,7 @@ import { useShoppingLists } from '../../providers/ShoppingListsProviderAPI';
 import { useAppState } from '../../providers/AppStateProvider';
 import { generateId, normalizeIngredientName, convertUnit } from '../../../constants';
 import { useRecipeCollectionAnalysis } from '../../../utils/hooks';
-import { Modal, Button, InputField, EmptyState, AddItemButton, Alert } from '../../../components';
+import { Modal, Button, InputField, EmptyState, Alert, BottomActionBar } from '../../../components';
 import { BookOpenIcon, MagnifyingGlassIcon, PlusIcon, ShoppingCartIcon } from '../../../constants';
 import RecipeCard from './RecipeCard';
 import RecipeForm from './RecipeForm';
@@ -17,7 +17,7 @@ const RecipesPageAPI: React.FC = () => {
   const { recipes, addRecipe, updateRecipe, deleteRecipe } = useRecipes();
   const { inventory, getInventoryItemByName } = useInventory();
   const { addShoppingList } = useShoppingLists();
-  const { searchTerm } = useAppState();
+  const { searchTerm, setSearchTerm } = useAppState();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | undefined>(undefined);
   const [showInventoryAnalysis, setShowInventoryAnalysis] = useState(true);
@@ -27,7 +27,6 @@ const RecipesPageAPI: React.FC = () => {
   const [showServingsModal, setShowServingsModal] = useState(false);
   const [selectedRecipeForShoppingList, setSelectedRecipeForShoppingList] = useState<Recipe | null>(null);
   const [selectedServings, setSelectedServings] = useState(1);
-  const [servingsInput, setServingsInput] = useState<{[key: string]: string}>({});
   const [isCreatingShoppingList, setIsCreatingShoppingList] = useState<string | null>(null); // Track which recipe is creating a list
 
   // Get inventory analysis for all recipes
@@ -202,7 +201,7 @@ const RecipesPageAPI: React.FC = () => {
   const totalRecipes = recipes.length;
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-4 pb-24">
       {alertMessage && <Alert type={alertMessage.type} message={alertMessage.message} onClose={() => setAlertMessage(null)} />}
       {/* Header with summary and toggle */}
       {totalRecipes > 0 && (
@@ -260,7 +259,22 @@ const RecipesPageAPI: React.FC = () => {
           })}
         </div>
       )}
-      <AddItemButton onClick={() => { setEditingRecipe(undefined); setShowAddModal(true); }} text="Add Recipe" />
+      
+      {/* Bottom Action Bar with Search and Add Recipe */}
+      <BottomActionBar
+        searchValue={searchTerm || ''}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search recipes..."
+        actionButton={
+          <Button 
+            onClick={() => { setEditingRecipe(undefined); setShowAddModal(true); }} 
+            leftIcon={<PlusIcon />}
+            className="rounded-full"
+          >
+            Add Recipe
+          </Button>
+        }
+      />
       
       {/* Recipe Form Modal */}
       <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setEditingRecipe(undefined); }} title={editingRecipe ? "Edit Recipe" : "Add New Recipe"} size="2xl">

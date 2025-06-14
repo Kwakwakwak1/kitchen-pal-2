@@ -6,6 +6,8 @@ import {
   createInventoryItem,
   updateInventoryItem,
   deleteInventoryItem,
+  batchDeleteInventoryItems,
+  batchEmptyInventoryItems,
   getLowStockItems,
   getExpiringItems
 } from '../controllers/inventoryController.js';
@@ -231,6 +233,74 @@ router.put('/:id', validate({
   params: commonSchemas.uuidParam, 
   body: inventorySchemas.update 
 }), updateInventoryItem);
+
+/**
+ * @swagger
+ * /api/inventory/batch/empty:
+ *   put:
+ *     summary: Batch empty inventory items (set quantity to 0)
+ *     tags: [Inventory]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ids
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 minItems: 1
+ *                 description: Array of inventory item IDs to empty
+ *     responses:
+ *       200:
+ *         description: Inventory items emptied successfully
+ *       404:
+ *         description: Some inventory items were not found
+ *       400:
+ *         description: Invalid request data
+ */
+router.put('/batch/empty', validate({ body: inventorySchemas.batchEmpty }), batchEmptyInventoryItems);
+
+/**
+ * @swagger
+ * /api/inventory/batch:
+ *   delete:
+ *     summary: Batch delete inventory items (permanently remove)
+ *     tags: [Inventory]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ids
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 minItems: 1
+ *                 description: Array of inventory item IDs to permanently delete
+ *     responses:
+ *       200:
+ *         description: Inventory items deleted successfully
+ *       404:
+ *         description: Some inventory items were not found
+ *       400:
+ *         description: Invalid request data
+ */
+router.delete('/batch', validate({ body: inventorySchemas.batchDelete }), batchDeleteInventoryItems);
 
 /**
  * @swagger

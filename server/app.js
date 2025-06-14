@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import fetch from 'node-fetch';
 import { PrismaClient } from '@prisma/client';
 
 import errorHandler from './middleware/errorHandler.js';
@@ -78,28 +79,40 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting
+// Rate limiting - Much more generous for production use
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000, // 1000 requests per 15 minutes (about 1 per second sustained)
   message: {
     error: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks and auth verification
+    return req.path === '/health' || req.path === '/api/auth/me';
+  }
 });
 app.use(limiter);
 
-// Stricter rate limiting for auth endpoints
+// Much more generous auth rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // limit each IP to 50 auth requests per windowMs (more reasonable for production)
+  max: 200, // 200 auth requests per 15 minutes
   message: {
     error: 'Too many authentication attempts, please try again later.'
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true // Don't count successful requests against the limit
+  skipSuccessfulRequests: true, // Don't count successful requests against the limit
+  skip: (req) => {
+    // Skip rate limiting for auth verification endpoint
+    return req.path === '/api/auth/me';
+  },
+  keyGenerator: (req) => {
+    // Use IP only for rate limiting to avoid session issues
+    return req.ip;
+  }
 });
 
 // Body parsing middleware
@@ -127,6 +140,106 @@ app.get('/health', async (req, res) => {
       database: 'disconnected',
       error: error.message,
       message: 'Server running but database unavailable'
+    });
+  }
+});
+
+// Recipe proxy endpoint for CORS handling
+app.get('/recipe-proxy', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        error: 'URL parameter is required'
+      });
+    }
+
+    // Validate URL
+    let targetUrl;
+    try {
+      targetUrl = new URL(decodeURIComponent(url));
+      if (!['http:', 'https:'].includes(targetUrl.protocol)) {
+        throw new Error('Invalid protocol');
+      }
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid URL format'
+      });
+    }
+
+    console.log(`Recipe proxy request for: ${targetUrl.href}`);
+
+    // Enhanced headers to mimic a real browser
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Upgrade-Insecure-Requests': '1'
+    };
+
+    // Special handling for specific domains
+    if (targetUrl.hostname.includes('butterbeready.com')) {
+      headers['Referer'] = 'https://www.google.com/';
+      headers['Sec-Fetch-User'] = '?1';
+    }
+
+    const response = await fetch(targetUrl.href, {
+      method: 'GET',
+      headers,
+      timeout: 20000,
+      follow: 5 // Follow up to 5 redirects
+    });
+
+    if (!response.ok) {
+      console.warn(`Failed to fetch ${targetUrl.href}: ${response.status} ${response.statusText}`);
+      return res.status(response.status).json({
+        success: false,
+        error: `HTTP ${response.status}: ${response.statusText}`
+      });
+    }
+
+    const html = await response.text();
+    
+    if (!html || html.trim().length < 100) {
+      return res.status(400).json({
+        success: false,
+        error: 'Received empty or very short response'
+      });
+    }
+
+    console.log(`Successfully proxied ${targetUrl.href} (${html.length} characters)`);
+
+    res.json({
+      success: true,
+      html,
+      url: targetUrl.href,
+      status: response.status
+    });
+
+  } catch (error) {
+    console.error('Recipe proxy error:', error);
+    
+    let errorMessage = 'Failed to fetch URL';
+    if (error.code === 'ENOTFOUND') {
+      errorMessage = 'Website not found or unreachable';
+    } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      errorMessage = 'Request timed out - website may be slow';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    res.status(500).json({
+      success: false,
+      error: errorMessage
     });
   }
 });

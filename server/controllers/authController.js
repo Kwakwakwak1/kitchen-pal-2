@@ -19,7 +19,7 @@ const generateAccessToken = async (userId) => {
     jwt.sign(
       { userId, type: 'access' },
       process.env.JWT_SECRET,
-      { expiresIn: '15m' },
+      { expiresIn: '8h' }, // Increased from 15m to 8h for better UX
       (err, token) => {
         if (err) reject(err);
         else resolve(token);
@@ -169,7 +169,7 @@ export const register = async (req, res, next) => {
       tokens: {
         access_token: accessToken,
         refresh_token: refreshToken,
-        expires_in: 900 // 15 minutes
+        expires_in: 28800 // 8 hours (8 * 60 * 60)
       }
     });
 
@@ -264,7 +264,7 @@ export const login = async (req, res, next) => {
       tokens: {
         access_token: accessToken,
         refresh_token: refreshToken,
-        expires_in: 900 // 15 minutes
+        expires_in: 28800 // 8 hours (8 * 60 * 60)
       }
     });
 

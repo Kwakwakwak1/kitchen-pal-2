@@ -4,28 +4,30 @@ import type { RecipeScrapingResult, ScrapedRecipeData, ScrapedIngredient } from 
 // Determine if we're in development mode based on hostname
 const isDev = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-// CORS Proxy options - prioritize production and local proxies
-const CORS_PROXIES = [
-  // Production proxy (highest priority in production)
-  ...(!isDev && typeof window !== 'undefined' ? [window.location.origin + '/recipe-proxy?url='] : []),
+// Get the API base URL
+const getApiBaseUrl = (): string => {
+  if (typeof window === 'undefined') return 'http://localhost:3005';
   
-  // Local development proxy (if running) - highest priority in dev
+  // In production, use the same origin as the frontend
+  if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return window.location.origin;
+  }
+  
+  // In development, use the backend port
+  return 'http://localhost:3005';
+};
+
+// CORS Proxy options - prioritize server-side proxy
+const CORS_PROXIES = [
+  // Server-side proxy (highest priority) - no CORS issues
+  getApiBaseUrl() + '/recipe-proxy?url=',
+  
+  // Local development proxy (if running) - backup for dev
   ...(isDev ? ['http://localhost:3001/recipe-proxy?url='] : []),
   
-  // Most reliable public proxies as fallback
+  // More reliable public proxies (removed problematic ones)
   'https://api.allorigins.win/get?url=',
-  'https://cors-proxy.htmldriven.com/?url=',
-  
-  // Backup proxies
-  'https://corsproxy.io/?',
   'https://api.codetabs.com/v1/proxy?quest=',
-  
-  // Additional fallbacks (may have limitations)
-  'https://thingproxy.freeboard.io/fetch/',
-  'https://cors.bridged.cc/',
-  
-  // Note: cors-anywhere.herokuapp.com requires demo key and has daily limits
-  // 'https://cors-anywhere.herokuapp.com/',
 ];
 
 /**
@@ -78,27 +80,31 @@ async function fetchHtmlContent(url: string): Promise<{ html: string; finalUrl: 
       let fetchOptions: RequestInit = {
         method: 'GET',
         headers: {
-          'Accept': 'application/json, text/html, */*',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+          'Accept': 'application/json, text/html, */*'
+          // Remove User-Agent header as it causes CORS issues with many proxies
         },
         // Use AbortController for Safari compatibility
         signal: abortController.signal
       };
 
+      // Special handling for specific domains - keep headers minimal for CORS compatibility
+      if (url.includes('butterbeready.com')) {
+        fetchOptions.headers = {
+          ...fetchOptions.headers,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          // Remove other headers that might cause CORS issues
+        };
+      }
+
       // Handle different proxy URL formats
-      if (proxy.includes('allorigins.win')) {
+      if (proxy.includes('/recipe-proxy?url=')) {
+        // Server-side proxy
+        proxyUrl = proxy + encodeURIComponent(url);
+      } else if (proxy.includes('allorigins.win')) {
         proxyUrl = proxy + encodeURIComponent(url);
       } else if (proxy.includes('localhost:3001')) {
         proxyUrl = proxy + encodeURIComponent(url);
-      } else if (proxy.includes('corsproxy.io')) {
-        proxyUrl = proxy + encodeURIComponent(url);
-      } else if (proxy.includes('cors.bridged.cc')) {
-        proxyUrl = proxy + encodeURIComponent(url);
-      } else if (proxy.includes('thingproxy.freeboard.io')) {
-        proxyUrl = proxy + encodeURIComponent(url);
       } else if (proxy.includes('codetabs.com')) {
-        proxyUrl = proxy + encodeURIComponent(url);
-      } else if (proxy.includes('htmldriven.com')) {
         proxyUrl = proxy + encodeURIComponent(url);
       } else {
         proxyUrl = proxy + encodeURIComponent(url);
@@ -139,13 +145,24 @@ async function fetchHtmlContent(url: string): Promise<{ html: string; finalUrl: 
       // Handle different response formats
       const contentType = response.headers.get('content-type') || '';
       
-      if (proxy.includes('allorigins.win')) {
+      if (proxy.includes('/recipe-proxy?url=')) {
+        // Server-side proxy response
+        const data = await response.json();
+        if (!data.success) {
+          const errorMsg = data.error || 'Unknown error from server proxy';
+          throw new Error(`Server proxy error: ${errorMsg}`);
+        }
+        if (!data.html) {
+          throw new Error('No HTML content returned from server proxy');
+        }
+        html = data.html;
+      } else if (proxy.includes('allorigins.win')) {
         const data = await response.json();
         if (!data.contents) {
           throw new Error('No content returned from allorigins proxy - website may be blocking requests');
         }
         html = data.contents;
-      } else if (proxy.includes('localhost:3001') || proxy.includes('/recipe-proxy')) {
+      } else if (proxy.includes('localhost:3001')) {
         const data = await response.json();
         if (!data.success) {
           const errorMsg = data.error || 'Unknown error from local proxy';
@@ -174,11 +191,12 @@ async function fetchHtmlContent(url: string): Promise<{ html: string; finalUrl: 
         throw new Error('Received empty or very short response - website may be blocking requests or page may not exist');
       }
       
-      // Basic check for blocked content
+      // Basic check for blocked content - be more specific to avoid false positives
       if (html.includes('Access Denied') || 
-          html.includes('Forbidden') || 
-          html.includes('blocked') ||
-          html.includes('Cloudflare')) {
+          html.includes('403 Forbidden') || 
+          html.includes('You have been blocked') ||
+          html.includes('Ray ID:') || // Cloudflare error pages
+          (html.includes('Cloudflare') && html.includes('Error') && html.length < 5000)) {
         throw new Error('Website is blocking automated access');
       }
       

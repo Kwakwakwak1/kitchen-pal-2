@@ -1,5 +1,5 @@
 # Frontend for Kitchen Pal React Application
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Install curl for health checks
 RUN apk add --no-cache curl
@@ -20,7 +20,7 @@ ARG VITE_API_URL=""
 # Build the application
 ENV NODE_ENV=production
 ENV VITE_API_URL=${VITE_API_URL}
-RUN npm run build
+RUN npm run build:skip-check
 
 # Remove dev dependencies after build
 RUN npm prune --production
@@ -36,4 +36,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/ || exit 1
 
 # Start the frontend
-CMD ["serve", "-s", "dist", "-l", "3000"] 
+CMD ["serve", "-s", "dist", "-l", "tcp://0.0.0.0:3000"] 

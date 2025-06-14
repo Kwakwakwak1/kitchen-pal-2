@@ -159,7 +159,7 @@ export interface InventoryContextType {
     }>;
     warnings: string[];
   };
-  deductIngredientsForPreparation: (recipe: Recipe, preparedServings: number) => {
+  deductIngredientsForPreparation: (recipe: Recipe, preparedServings: number) => Promise<{
     success: boolean;
     deductedIngredients: Array<{
       name: string;
@@ -168,7 +168,7 @@ export interface InventoryContextType {
       remainingInInventory: number;
     }>;
     errors: string[];
-  };
+  }>;
 }
 
 export interface StoresContextType {
