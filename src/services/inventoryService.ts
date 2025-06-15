@@ -8,6 +8,8 @@ interface InventoryItemAPI {
   unit: string;
   low_stock_threshold?: number;
   expiry_date?: string;
+  frequency_of_use?: string;
+  default_store_id?: string;
   location?: string;
   brand?: string;
   notes?: string;
@@ -21,6 +23,8 @@ interface CreateInventoryItemRequest {
   unit: string;
   low_stock_threshold?: number;
   expiry_date?: string;
+  frequency_of_use?: string;
+  default_store_id?: string;
   location?: string;
   brand?: string;
   notes?: string;

@@ -16,13 +16,30 @@ export const RecipesProviderAPI: React.FC<RecipesProviderProps> = ({ children })
   const { showToast } = useToast();
   const { currentUser, isLoadingAuth } = useAuthAPI();
 
+  // Compute a stable authentication state
+  const isAuthenticated = !!currentUser && !isLoadingAuth;
+
   // Queries - only run when user is authenticated
   const { data: recipes = [] } = useQuery({
     queryKey: ['recipes'],
     queryFn: () => recipesService.getRecipes(),
     staleTime: 5 * 60 * 1000, // 5 minutes
-    enabled: !!currentUser && !isLoadingAuth, // Only run when authenticated
+    retry: (failureCount, error) => {
+      // Don't retry on authentication errors
+      if ((error as any)?.status === 401) return false;
+      return failureCount < 3;
+    },
+    enabled: isAuthenticated, // Use the computed stable state
   });
+
+  // Log authentication state changes for debugging
+  React.useEffect(() => {
+    console.log('Recipes Provider - Auth state:', { 
+      currentUser: !!currentUser, 
+      isLoadingAuth, 
+      isAuthenticated 
+    });
+  }, [currentUser, isLoadingAuth, isAuthenticated]);
 
   // Mutations
   const addRecipeMutation = useMutation({

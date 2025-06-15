@@ -207,7 +207,17 @@ class ApiService {
 
   // URL builder helper
   buildURL(endpoint: string, params?: Record<string, any>): string {
-    const url = new URL(endpoint, `${this.baseURL}/api`);
+    // For same-origin requests (baseURL is empty), just use the endpoint path
+    const basePath = this.baseURL ? `${this.baseURL}/api` : '/api';
+    
+    let url: URL;
+    if (this.baseURL) {
+      // External base URL - use full URL construction
+      url = new URL(endpoint, basePath);
+    } else {
+      // Same-origin - construct URL with current origin
+      url = new URL(endpoint, `${window.location.origin}${basePath}`);
+    }
     
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -217,7 +227,8 @@ class ApiService {
       });
     }
     
-    return url.pathname + url.search;
+    // For same-origin requests, return just the path + search
+    return this.baseURL ? url.toString() : url.pathname + url.search;
   }
 }
 

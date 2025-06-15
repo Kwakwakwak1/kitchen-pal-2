@@ -27,6 +27,7 @@ import ShoppingListsPageAPI from './src/pages/shopping-lists/ShoppingListsPageAP
 import ShoppingListGeneratorPageAPI from './src/pages/shopping-lists/ShoppingListGeneratorPageAPI';
 import InventoryPageAPI from './src/pages/inventory/InventoryPageAPI';
 
+
 // Import UI components and utilities
 import { Button, SearchInput } from './components';
 import { APP_NAME, DEFAULT_AVATAR_IMAGE } from './constants';
@@ -237,6 +238,7 @@ const AppLayoutAPI: React.FC = () => {
           <Route path="/generate_shopping_list" element={<ProtectedRoute><ShoppingListGeneratorPageAPI /></ProtectedRoute>} />
           <Route path="/stores" element={<ProtectedRoute><StoresPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          
           
           {/* Admin Routes */}
           <Route path="/admin" element={<ProtectedRoute adminOnly={true}><AdminDashboardPage /></ProtectedRoute>} />

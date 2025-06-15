@@ -12,22 +12,54 @@ interface InventoryProviderProps {
   children: ReactNode;
 }
 
+// Helper function to create inventory item request, filtering undefined values
+const createInventoryItemRequest = (data: {
+  ingredient_name: string;
+  quantity: number;
+  unit: string;
+  low_stock_threshold?: number;
+  expiry_date?: string;
+  frequency_of_use?: string;
+  default_store_id?: string;
+}) => {
+  const request: any = {
+    ingredient_name: data.ingredient_name,
+    quantity: data.quantity,
+    unit: data.unit,
+  };
+  
+  if (data.low_stock_threshold !== undefined) request.low_stock_threshold = data.low_stock_threshold;
+  if (data.expiry_date !== undefined) request.expiry_date = data.expiry_date;
+  if (data.frequency_of_use !== undefined) request.frequency_of_use = data.frequency_of_use;
+  if (data.default_store_id !== undefined) request.default_store_id = data.default_store_id;
+  
+  return request;
+};
+
 // Transform function from API format to app format
-const transformInventoryItemFromAPI = (apiItem: any): InventoryItem => ({
-  id: apiItem.id,
-  ingredientName: apiItem.ingredient_name,
-  quantity: apiItem.quantity,
-  unit: apiItem.unit as Unit,
-  lowStockThreshold: apiItem.low_stock_threshold,
-  expirationDate: apiItem.expiry_date,
-  frequencyOfUse: FrequencyOfUse.OTHER, // Default since API doesn't have this field yet
-  defaultStoreId: undefined, // Not supported in current API
-});
+const transformInventoryItemFromAPI = (apiItem: any): InventoryItem => {
+  console.log('Transforming API item:', apiItem);
+  const transformed = {
+    id: apiItem.id,
+    ingredientName: apiItem.ingredient_name,
+    quantity: apiItem.quantity,
+    unit: apiItem.unit as Unit,
+    lowStockThreshold: apiItem.low_stock_threshold || undefined,
+    expirationDate: apiItem.expiry_date || undefined,
+    frequencyOfUse: apiItem.frequency_of_use as FrequencyOfUse || undefined,
+    defaultStoreId: apiItem.default_store_id || undefined,
+  };
+  console.log('Transformed to:', transformed);
+  return transformed;
+};
 
 export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { currentUser, isLoadingAuth } = useAuthAPI();
+
+  // Compute a stable authentication state
+  const isAuthenticated = !!currentUser && !isLoadingAuth;
 
   // Queries
   const { data: inventory = [] } = useQuery({
@@ -41,8 +73,31 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
       return transformed;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
-    enabled: !!currentUser && !isLoadingAuth, // Only run when authenticated
+    retry: (failureCount, error) => {
+      // Don't retry on authentication errors
+      if ((error as any)?.status === 401) return false;
+      return failureCount < 3;
+    },
+    enabled: isAuthenticated, // Use the computed stable state
   });
+
+  // Log authentication state changes for debugging
+  React.useEffect(() => {
+    console.log('Inventory Provider - Auth state:', { 
+      currentUser: !!currentUser, 
+      isLoadingAuth, 
+      isAuthenticated,
+      inventoryCount: inventory.length
+    });
+  }, [currentUser, isLoadingAuth, isAuthenticated, inventory.length]);
+
+  // Additional debugging for inventory data changes
+  React.useEffect(() => {
+    console.log('Inventory data changed:', { 
+      count: inventory.length, 
+      items: inventory.slice(0, 3).map(item => ({ id: item.id, name: item.ingredientName })) // First 3 items
+    });
+  }, [inventory]);
 
   // Mutations
   const addInventoryItemMutation = useMutation({
@@ -56,21 +111,31 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
 
       if (existingItem) {
         // Update existing item quantity
-        const updatedItem = await inventoryService.updateInventoryItem(existingItem.id, {
-          quantity: existingItem.quantity + item.quantity,
-          low_stock_threshold: item.lowStockThreshold !== undefined ? item.lowStockThreshold : existingItem.lowStockThreshold,
-          expiry_date: item.expirationDate || existingItem.expirationDate,
-        });
+        const updatedItem = await inventoryService.updateInventoryItem(existingItem.id, 
+          createInventoryItemRequest({
+            ingredient_name: normalizeIngredientName(existingItem.ingredientName),
+            quantity: existingItem.quantity + item.quantity,
+            unit: existingItem.unit,
+            low_stock_threshold: item.lowStockThreshold !== undefined ? item.lowStockThreshold : existingItem.lowStockThreshold,
+            expiry_date: item.expirationDate || existingItem.expirationDate,
+            frequency_of_use: item.frequencyOfUse || existingItem.frequencyOfUse,
+            default_store_id: item.defaultStoreId || existingItem.defaultStoreId,
+          })
+        );
         return { item: transformInventoryItemFromAPI(updatedItem), isUpdate: true };
       } else {
         // Add new item
-        const newItem = await inventoryService.createInventoryItem({
-          ingredient_name: normalizedName,
-          quantity: item.quantity,
-          unit: item.unit,
-          low_stock_threshold: item.lowStockThreshold,
-          expiry_date: item.expirationDate,
-        });
+        const newItem = await inventoryService.createInventoryItem(
+          createInventoryItemRequest({
+            ingredient_name: normalizedName,
+            quantity: item.quantity,
+            unit: item.unit,
+            low_stock_threshold: item.lowStockThreshold,
+            expiry_date: item.expirationDate,
+            frequency_of_use: item.frequencyOfUse,
+            default_store_id: item.defaultStoreId,
+          })
+        );
         return { item: transformInventoryItemFromAPI(newItem), isUpdate: false };
       }
     },
@@ -90,13 +155,18 @@ export const InventoryProviderAPI: React.FC<InventoryProviderProps> = ({ childre
 
   const updateInventoryItemMutation = useMutation({
     mutationFn: async (item: InventoryItem) => {
-      const updatedItem = await inventoryService.updateInventoryItem(item.id, {
+      const updateData = createInventoryItemRequest({
         ingredient_name: normalizeIngredientName(item.ingredientName),
         quantity: item.quantity,
         unit: item.unit,
         low_stock_threshold: item.lowStockThreshold,
         expiry_date: item.expirationDate,
+        frequency_of_use: item.frequencyOfUse,
+        default_store_id: item.defaultStoreId,
       });
+      console.log('Sending update data to API:', updateData);
+      const updatedItem = await inventoryService.updateInventoryItem(item.id, updateData);
+      console.log('Received updated item from API:', updatedItem);
       return transformInventoryItemFromAPI(updatedItem);
     },
     onMutate: async (newItem) => {

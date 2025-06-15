@@ -31,16 +31,21 @@ export const AuthProviderAPI: React.FC<AuthProviderProps> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users] = useState<User[]>([]); // Not used in API mode, but kept for interface compatibility
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   // Check for existing authentication on mount
   useEffect(() => {
+    if (hasInitialized) return; // Prevent multiple initialization attempts
+
     const checkAuthStatus = async () => {
       setIsLoadingAuth(true);
       
       try {
         if (authService.isAuthenticated()) {
+          console.log('Token found, verifying with server...');
           // Try to get current user from API
           const apiUser = await authService.getCurrentUser();
+          console.log('Authentication verified successfully');
           
           // Try to get preferences (optional)
           let preferences: UserPreferences | undefined;
@@ -61,13 +66,22 @@ export const AuthProviderAPI: React.FC<AuthProviderProps> = ({ children }) => {
           
           const user = convertApiUserToAppUser(apiUser, preferences);
           setCurrentUser(user);
+        } else {
+          console.log('No valid token found');
+          setCurrentUser(null);
         }
       } catch (error) {
         console.warn('Failed to verify authentication:', error);
         // Clear any invalid tokens
-        authService.logout();
+        try {
+          await authService.logout();
+        } catch (logoutError) {
+          console.warn('Logout error during auth check:', logoutError);
+        }
+        setCurrentUser(null);
       } finally {
         setIsLoadingAuth(false);
+        setHasInitialized(true);
       }
     };
 
@@ -75,9 +89,9 @@ export const AuthProviderAPI: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Listen for token expiration events
     const handleTokenExpired = () => {
-      setCurrentUser(null);
-      // Could show a toast notification here
       console.warn('Session expired. Please log in again.');
+      setCurrentUser(null);
+      setIsLoadingAuth(false);
     };
 
     window.addEventListener('auth:tokenExpired', handleTokenExpired);
@@ -85,7 +99,7 @@ export const AuthProviderAPI: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       window.removeEventListener('auth:tokenExpired', handleTokenExpired);
     };
-  }, []);
+  }, [hasInitialized]); // Add hasInitialized as dependency
 
   const login = async (email: string, passwordAttempt: string): Promise<boolean> => {
     try {

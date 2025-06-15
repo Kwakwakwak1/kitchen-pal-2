@@ -33,9 +33,13 @@ const InventoryItemFormAPI: React.FC<InventoryItemFormProps> = ({ initialItem, o
       frequencyOfUse: frequencyOfUse as FrequencyOfUse || undefined,
       defaultStoreId: defaultStoreId || undefined,
     };
+    console.log('Form submitting item data:', itemData);
     if (initialItem) {
-      onSave({ ...initialItem, ...itemData });
+      const finalData = { ...initialItem, ...itemData };
+      console.log('Final data being sent (edit):', finalData);
+      onSave(finalData);
     } else {
+      console.log('Final data being sent (new):', itemData);
       onSave(itemData);
     }
     onClose(); 

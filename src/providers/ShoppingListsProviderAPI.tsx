@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ShoppingList, ShoppingListsContextType, ShoppingListStatus, Unit } from '../../types';
 import { shoppingListsService } from '../services';
 import { ShoppingListAPI, ShoppingListItemAPI } from '../types/api';
+import { useAuthAPI } from './AuthProviderAPI';
 
 const ShoppingListsContext = createContext<ShoppingListsContextType | undefined>(undefined);
 
@@ -10,26 +11,31 @@ interface ShoppingListsProviderProps {
   children: ReactNode;
 }
 
-// Transform functions
+// Transform function from API format to app format
 const transformShoppingListFromAPI = (apiList: ShoppingListAPI, items: ShoppingListItemAPI[] = []): ShoppingList => ({
   id: apiList.id,
   name: apiList.name,
   createdAt: apiList.created_at,
   status: apiList.is_active ? ShoppingListStatus.ACTIVE : ShoppingListStatus.ARCHIVED,
-  archivedAt: !apiList.is_active ? apiList.updated_at : undefined,
+  archivedAt: undefined, // API doesn't currently support this field
+  completedAt: undefined, // API doesn't currently support this field
   items: items.map(item => ({
     id: item.id,
     ingredientName: item.ingredient_name,
-    neededQuantity: typeof item.quantity === 'string' ? parseFloat(item.quantity) || 0 : item.quantity || 0,
+    neededQuantity: item.quantity || 0,
     unit: (item.unit as Unit) || Unit.PIECE,
-    recipeSources: [], // Not supported in current API
     purchased: item.is_purchased,
-    notes: item.notes,
+    notes: item.notes || '',
+    recipeSources: [], // API doesn't currently support recipe sources
   })),
 });
 
 export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
+  const { currentUser, isLoadingAuth } = useAuthAPI();
+
+  // Compute a stable authentication state
+  const isAuthenticated = !!currentUser && !isLoadingAuth;
 
   // Queries
   const { data: activeShoppingLists = [] } = useQuery({
@@ -44,6 +50,12 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
       );
     },
     staleTime: 2 * 60 * 1000, // 2 minutes
+    retry: (failureCount, error) => {
+      // Don't retry on authentication errors
+      if ((error as any)?.status === 401) return false;
+      return failureCount < 3;
+    },
+    enabled: isAuthenticated, // Use the computed stable state
   });
 
   const { data: archivedShoppingLists = [] } = useQuery({
@@ -58,7 +70,22 @@ export const ShoppingListsProviderAPI: React.FC<ShoppingListsProviderProps> = ({
       );
     },
     staleTime: 5 * 60 * 1000, // 5 minutes - archived lists change less frequently
+    retry: (failureCount, error) => {
+      // Don't retry on authentication errors
+      if ((error as any)?.status === 401) return false;
+      return failureCount < 3;
+    },
+    enabled: isAuthenticated, // Use the computed stable state
   });
+
+  // Log authentication state changes for debugging
+  React.useEffect(() => {
+    console.log('ShoppingLists Provider - Auth state:', { 
+      currentUser: !!currentUser, 
+      isLoadingAuth, 
+      isAuthenticated 
+    });
+  }, [currentUser, isLoadingAuth, isAuthenticated]);
 
   // Mutations
   const addShoppingListMutation = useMutation({
